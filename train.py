@@ -12,8 +12,21 @@ import utils as ut
 # TODO different data loaders for different conditions
 # load all four dataframes and concat into one df
 # each data frame from a different 2020 month (i.e., march, april, june, november)
-#df_itc_all = ut.load_and_concat_raw_data()
-#df_itc_all.drop("Unnamed: 0", axis=1, inplace=True)
+
+# select which months to load
+# slice(0,4,1) selects all months
+filter = slice(0, 4, 1)
+df_itc_all = ut.load_and_concat_raw_data(filter)
+df_itc_all.drop("Unnamed: 0", axis=1, inplace=True)
+# make participant ids unique (i.e., they were re-used across sessions, but likely not from the same participant)
+df_itc_all = ut.unique_participant_ids(df_itc_all)
+n_participants_total = df_itc_all["sid_unique"].nunique()
+# note. all participants provided exactly 195 trials
+n_trials = 195
+
+df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = ut.make_conditions(
+    df_itc_all, n_trials, n_participants_total)
+
 
 run = wandb.init(project="source-of-variablity")
 
@@ -31,8 +44,9 @@ num_trials = 100
 # careful: assumes all participants have equal number of trials
 X = torch.randn(num_participants, num_trials, num_features)
 Y = torch.bernoulli(0.5 * torch.ones(num_participants, num_trials, 1))
-Y_shifted = torch.cat([torch.zeros(num_participants, 1, 1), Y[:, :-1, :]], dim = 1)
-X = torch.cat([X, Y_shifted], dim = -1)
+Y_shifted = torch.cat(
+    [torch.zeros(num_participants, 1, 1), Y[:, :-1, :]], dim=1)
+X = torch.cat([X, Y_shifted], dim=-1)
 
 # create torch data loader
 dataset = TensorDataset(X, Y)
@@ -48,10 +62,12 @@ class LearnedPositionalEncoding(nn.Module):
         S = x.size(1)
         return x + self.pos(torch.arange(S, device=x.device))[None, :, :]
 
+
 class CausalEncoder(nn.Module):
     def __init__(self, d_model=64, nhead=8, num_layers=4, ff=256, dropout=0.0, out_dim=1, in_dim=5, max_len=100):
         super().__init__()
-        layer = TransformerEncoderLayer(d_model, nhead, ff, dropout, batch_first=True)
+        layer = TransformerEncoderLayer(
+            d_model, nhead, ff, dropout, batch_first=True)
         self.enc = TransformerEncoder(layer, num_layers)
         self.in_proj = nn.Linear(in_dim, d_model)
         self.out_proj = nn.Linear(d_model, out_dim)
@@ -70,6 +86,7 @@ class CausalEncoder(nn.Module):
         h = self.enc(h, mask=mask)
 
         return self.out_proj(h)
+
 
 model = CausalEncoder().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
