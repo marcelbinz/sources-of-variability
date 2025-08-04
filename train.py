@@ -71,8 +71,10 @@ X_shared_nohist, y_shared_nohist = ut.format_to_torch(
 
 
 batch_size = 32
-num_epochs = 10  # 100
+num_epochs = 100
 lr = 3e-4
+# just to subset and test, comment otherwise
+n_participants_total = 1000
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -85,17 +87,16 @@ run = wandb.init(
     # Set the wandb project where this run will be logged.
     project="source-of-variablity",
     # Track hyperparameters and run metadata.
-    name="run_condition_original",
+    name="condition=original",
     config={
+        "subset_participants": n_participants_total,
         "learning_rate": lr,
         "architecture": "CausalTF with learned Pos. Encoding",
         "dataset": "Agrawal et al. (2023) JEP:G",
         "epochs": num_epochs,
     }
 )
-wandb.run.tags += ("condition_original", "subset_participants",)
 
-n_participants_total = 100
 y_original = y_original[0:n_participants_total, :, :]
 X_original = X_original[0:n_participants_total, :, :]
 
@@ -128,14 +129,26 @@ for epoch in tqdm(range(num_epochs)):
         wandb.log({"train/loss_step": loss.item()})
 
     torch.save(model, 'models/condition_original/epoch=' + str(epoch) + '.pth')
-
+wandb.finish()
 
 # ===================== 2. Model: By-Participant and History =====================
 
 
-wandb.run.tags += ("condition_id_nohist", "subset_participants",)
-
-X_id_nohist, y_id_nohist
+run = wandb.init(
+    # Set the wandb entity where your project will be logged (generally your team name).
+    entity="mirkothalmann-helmholtz-munich",
+    # Set the wandb project where this run will be logged.
+    project="source-of-variablity",
+    # Track hyperparameters and run metadata.
+    name="condition=ID-NoHistory",
+    config={
+        "subset_participants": n_participants_total,
+        "learning_rate": lr,
+        "architecture": "CausalTF with learned Pos. Encoding",
+        "dataset": "Agrawal et al. (2023) JEP:G",
+        "epochs": num_epochs,
+    }
+)
 
 
 y_id_nohist = y_id_nohist[0:n_participants_total, :, :]
@@ -171,13 +184,26 @@ for epoch in tqdm(range(num_epochs)):
 
     torch.save(model, 'models/condition_id_nohist/epoch=' +
                str(epoch) + '.pth')
-
+wandb.finish()
 
 # ===================== 3. Model: Shared and History =====================
 
 
-wandb.run.tags += ("condition_shared_hist", "subset_participants",)
-
+run = wandb.init(
+    # Set the wandb entity where your project will be logged (generally your team name).
+    entity="mirkothalmann-helmholtz-munich",
+    # Set the wandb project where this run will be logged.
+    project="source-of-variablity",
+    # Track hyperparameters and run metadata.
+    name="condition=Shared-History",
+    config={
+        "subset_participants": n_participants_total,
+        "learning_rate": lr,
+        "architecture": "CausalTF with learned Pos. Encoding",
+        "dataset": "Agrawal et al. (2023) JEP:G",
+        "epochs": num_epochs,
+    }
+)
 
 y_shared_hist = y_shared_hist[0:n_participants_total, :, :]
 X_shared_hist = X_shared_hist[0:n_participants_total, :, :]
@@ -212,13 +238,26 @@ for epoch in tqdm(range(num_epochs)):
 
     torch.save(model, 'models/condition_shared_hist/epoch=' +
                str(epoch) + '.pth')
-
+wandb.finish()
 
 # ===================== 4. Model: Shared and No History =====================
 
 
-wandb.run.tags += ("condition_shared_nohist", "subset_participants",)
-
+run = wandb.init(
+    # Set the wandb entity where your project will be logged (generally your team name).
+    entity="mirkothalmann-helmholtz-munich",
+    # Set the wandb project where this run will be logged.
+    project="source-of-variablity",
+    # Track hyperparameters and run metadata.
+    name="condition=Shared-NoHistory",
+    config={
+        "subset_participants": n_participants_total,
+        "learning_rate": lr,
+        "architecture": "CausalTF with learned Pos. Encoding",
+        "dataset": "Agrawal et al. (2023) JEP:G",
+        "epochs": num_epochs,
+    }
+)
 
 y_shared_nohist = y_shared_nohist[0:n_participants_total, :, :]
 X_shared_nohist = X_shared_nohist[0:n_participants_total, :, :]
