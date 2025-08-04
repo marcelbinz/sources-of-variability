@@ -160,7 +160,7 @@ X_id_nohist = torch.cat([X_id_nohist, y_id_nohist_shifted], dim=-1)
 
 
 # create torch data loader
-dataset = TensorDataset(X_id_nohist, y_id_nohist_shifted)
+dataset = TensorDataset(X_id_nohist, y_id_nohist)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
@@ -214,7 +214,7 @@ X_shared_hist = torch.cat([X_shared_hist, y_shared_hist_shifted], dim=-1)
 
 
 # create torch data loader
-dataset = TensorDataset(X_shared_hist, y_shared_hist_shifted)
+dataset = TensorDataset(X_shared_hist, y_shared_hist)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
@@ -268,7 +268,7 @@ X_shared_nohist = torch.cat([X_shared_nohist, y_shared_nohist_shifted], dim=-1)
 
 
 # create torch data loader
-dataset = TensorDataset(X_shared_nohist, y_shared_nohist_shifted)
+dataset = TensorDataset(X_shared_nohist, y_shared_nohist)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
