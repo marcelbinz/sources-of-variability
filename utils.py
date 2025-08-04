@@ -2,6 +2,7 @@ import requests
 from io import StringIO
 import numpy as np
 import pandas as pd
+import torch
 from functools import reduce
 
 
@@ -213,3 +214,40 @@ def shared_nohist(df, n_trials, n_participants_total):
         range(1, n_participants_total + 1), n_trials)
     df_new.sort_values(["sid_unique", "trial_id"], inplace=True)
     return df_new
+
+
+def format_to_torch(df, col_pid, cols_x, col_y):
+    """
+    Converts a pandas DataFrame into 3D NumPy arrays suitable for PyTorch input.
+
+    Parameters:
+    ----------
+    df : pandas.DataFrame
+        The input DataFrame containing all relevant data.
+    col_pid : list of str
+        List of column names used to identify unique groups (e.g., patient or session IDs).
+    cols_x : list of str
+        List of feature column names to be used as input (X).
+    col_y : list of str
+        List of target column names to be used as output (y).
+
+    Returns:
+    -------
+    X_3d : numpy.ndarray
+        A 3D array of shape (num_participants, num_trials, num_features) representing input features.
+    y_3d : numpy.ndarray
+        A 3D array of shape (num_participants, num_trials, num_features) representing target labels.
+
+    Notes:
+    -----
+    - The function groups the DataFrame by `col_pid`, then converts each group into a 2D NumPy array.
+    - It stacks all groups into a single 3D array for both inputs and targets.
+    - Useful for preparing time-series or sequential data for deep learning models in PyTorch.
+    """
+    df_x = df[col_pid + cols_x].copy()
+    df_y = df[col_pid + col_y].copy()
+    grouped_x = df_x.groupby(col_pid)[cols_x].apply(lambda x: x.to_numpy())
+    grouped_y = df_y.groupby(col_pid)[col_y].apply(lambda x: x.to_numpy())
+    X_3d = torch.from_numpy(np.stack(grouped_x.to_numpy()))
+    y_3d = torch.from_numpy(np.stack(grouped_y.to_numpy()))
+    return X_3d, y_3d

@@ -8,6 +8,7 @@ import wandb
 
 # home-grown
 import utils as ut
+import model as mod
 
 # TODO different data loaders for different conditions
 # load all four dataframes and concat into one df
@@ -24,8 +25,22 @@ n_participants_total = df_itc_all["sid_unique"].nunique()
 # note. all participants provided exactly 195 trials
 n_trials = 195
 
+# shuffle trial ids and participant ids to create dfs with theoretical upper bounds on learning
 df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = ut.make_conditions(
     df_itc_all, n_trials, n_participants_total)
+
+# convert to 3d torch arrays that can be used by model
+col_pid = ["sid_unique"]
+cols_x = ["right_time", "right_val", "left_time", "left_val"]
+col_y = ["right_picked"]
+X_original, y_original = ut.format_to_torch(
+    df_itc_original, col_pid, cols_x, col_y)
+X_id_nohist, y_id_nohist = ut.format_to_torch(
+    df_itc_id_nohist, col_pid, cols_x, col_y)
+X_shared_hist, y_shared_hist = ut.format_to_torch(
+    df_itc_shared_hist, col_pid, cols_x, col_y)
+X_shared_nohist, y_shared_nohist = ut.format_to_torch(
+    df_itc_shared_nohist, col_pid, cols_x, col_y)
 
 
 run = wandb.init(project="source-of-variablity")
@@ -53,42 +68,7 @@ dataset = TensorDataset(X, Y)
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
-class LearnedPositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len):
-        super().__init__()
-        self.pos = nn.Embedding(max_len, d_model)
-
-    def forward(self, x):
-        S = x.size(1)
-        return x + self.pos(torch.arange(S, device=x.device))[None, :, :]
-
-
-class CausalEncoder(nn.Module):
-    def __init__(self, d_model=64, nhead=8, num_layers=4, ff=256, dropout=0.0, out_dim=1, in_dim=5, max_len=100):
-        super().__init__()
-        layer = TransformerEncoderLayer(
-            d_model, nhead, ff, dropout, batch_first=True)
-        self.enc = TransformerEncoder(layer, num_layers)
-        self.in_proj = nn.Linear(in_dim, d_model)
-        self.out_proj = nn.Linear(d_model, out_dim)
-        self.pos_enc = LearnedPositionalEncoding(d_model, max_len)
-
-    @staticmethod
-    def causal_mask(S, device):
-        return torch.triu(torch.full((S, S), float("-inf"), device=device), diagonal=1)
-
-    def forward(self, x):
-        S = x.size(1)
-        mask = self.causal_mask(S, x.device)
-
-        h = self.in_proj(x)
-        h = self.pos_enc(h)
-        h = self.enc(h, mask=mask)
-
-        return self.out_proj(h)
-
-
-model = CausalEncoder().to(device)
+model = mod.CausalEncoder().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 criterion = nn.BCEWithLogitsLoss()
 
