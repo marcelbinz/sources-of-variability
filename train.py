@@ -139,12 +139,13 @@ model = mod.CausalEncoder().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 criterion = nn.BCEWithLogitsLoss()
 
-train_loss_total = 0
-dev_loss_total = 0
+
 num_train_batches = len(dataloader_train)
 num_dev_batches = len(dataloader_dev)
 
 for epoch in tqdm(range(num_epochs)):
+    train_loss_total = 0
+    dev_loss_total = 0
     for batch_x, batch_y in dataloader_train:
         batch_x = batch_x.to(device).float()
         batch_y = batch_y.to(device).float()
