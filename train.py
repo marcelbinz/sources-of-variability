@@ -50,6 +50,7 @@ n_trials = 195
 col_pid = ["sid_unique"]
 cols_x = ["right_time", "right_val", "left_time", "left_val"]
 col_y = ["right_picked"]
+col_y_shifted = ["right_picked_prev"]
 
 # zscale X
 df_itc_all[cols_x] = df_itc_all[cols_x].apply(zscore)
@@ -58,23 +59,47 @@ df_itc_all[cols_x] = df_itc_all[cols_x].apply(zscore)
 df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = ut.make_conditions(
     df_itc_all, n_trials, n_participants_total)
 
-# convert to 3d torch arrays that can be used by model
+# shift y by one trial such that on trial t, model gets info about y from trial t-1
+l_dfs = list(map(ut.shift_y, [
+             df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist]))
+df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = l_dfs[
+    0], l_dfs[1], l_dfs[2], l_dfs[3]
 
-X_original, y_original = ut.format_to_torch(
-    df_itc_original, col_pid, cols_x, col_y)
-X_id_nohist, y_id_nohist = ut.format_to_torch(
-    df_itc_id_nohist, col_pid, cols_x, col_y)
-X_shared_hist, y_shared_hist = ut.format_to_torch(
-    df_itc_shared_hist, col_pid, cols_x, col_y)
-X_shared_nohist, y_shared_nohist = ut.format_to_torch(
-    df_itc_shared_nohist, col_pid, cols_x, col_y)
+# train dev split
+df_itc_original_train, df_itc_original_dev = ut.train_dev_split(
+    df_itc_original, "first_vs_second_half", n_trial_split=100)
+df_itc_id_nohist_train, df_itc_id_nohist_dev = ut.train_dev_split(
+    df_itc_id_nohist, "first_vs_second_half", n_trial_split=100)
+df_itc_shared_hist_train, df_itc_shared_hist_dev = ut.train_dev_split(
+    df_itc_shared_hist, "first_vs_second_half", n_trial_split=100)
+df_itc_shared_nohist_train, df_itc_shared_nohist_dev = ut.train_dev_split(
+    df_itc_shared_nohist, "first_vs_second_half", n_trial_split=100)
+
+# convert to 3d torch arrays that can be used by model
+X_original_train, y_original_train = ut.format_to_torch(
+    df_itc_original_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+X_id_nohist_train, y_id_nohist_train = ut.format_to_torch(
+    df_itc_id_nohist_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+X_shared_hist_train, y_shared_hist_train = ut.format_to_torch(
+    df_itc_shared_hist_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+X_shared_nohist_train, y_shared_nohist_train = ut.format_to_torch(
+    df_itc_shared_nohist_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+
+X_original_dev, y_original_dev = ut.format_to_torch(
+    df_itc_original_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+X_id_nohist_dev, y_id_nohist_dev = ut.format_to_torch(
+    df_itc_id_nohist_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+X_shared_hist_dev, y_shared_hist_dev = ut.format_to_torch(
+    df_itc_shared_hist_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+X_shared_nohist_dev, y_shared_nohist_dev = ut.format_to_torch(
+    df_itc_shared_nohist_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
 
 
 batch_size = 32
 num_epochs = 100
 lr = 3e-4
 # just to subset and test, comment otherwise
-n_participants_total = 1000
+n_participants_total = 200
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -97,43 +122,61 @@ run = wandb.init(
     }
 )
 
-y_original = y_original[0:n_participants_total, :, :]
-X_original = X_original[0:n_participants_total, :, :]
-
-y_original_shifted = torch.cat(
-    [torch.zeros(n_participants_total, 1, 1), y_original[:, :-1, :]], dim=1)
-X_original = torch.cat([X_original, y_original_shifted], dim=-1)
+y_original_train = y_original_train[0:n_participants_total, :, :]
+X_original_train = X_original_train[0:n_participants_total, :, :]
 
 
 # create torch data loader
-dataset = TensorDataset(X_original, y_original)
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+dataset_train = TensorDataset(X_original_train, y_original_train)
+dataloader_train = DataLoader(
+    dataset_train, batch_size=batch_size, shuffle=True)
+
+dataset_dev = TensorDataset(X_original_dev, y_original_dev)
+dataloader_dev = DataLoader(dataset_dev, batch_size=batch_size, shuffle=True)
 
 
 model = mod.CausalEncoder().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 criterion = nn.BCEWithLogitsLoss()
 
+train_loss_total = 0
+dev_loss_total = 0
+num_train_batches = len(dataloader_train)
+num_dev_batches = len(dataloader_dev)
+
 for epoch in tqdm(range(num_epochs)):
-    for batch_x, batch_y in dataloader:
+    for batch_x, batch_y in dataloader_train:
         batch_x = batch_x.to(device).float()
         batch_y = batch_y.to(device).float()
 
         outputs = model(batch_x)
         loss = criterion(outputs, batch_y)
+        train_loss_total += loss.item()
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        wandb.log({"train/loss_step": loss.item()})
+    for batch_x, batch_y in dataloader_dev:
+        batch_x = batch_x.to(device).float()
+        batch_y = batch_y.to(device).float()
+
+        outputs = model(batch_x)
+        loss_dev = criterion(outputs, batch_y)
+        dev_loss_total += loss_dev.item()
+
+    wandb.log({
+        "epoch": epoch,
+        "train/loss_epoch": train_loss_total / num_train_batches,
+        "dev/loss_epoch": dev_loss_total / num_dev_batches,
+    })
 
     torch.save(model, 'models/condition_original/epoch=' + str(epoch) + '.pth')
 wandb.finish()
 
 # ===================== 2. Model: By-Participant and History =====================
 
-
+""" 
 run = wandb.init(
     # Set the wandb entity where your project will be logged (generally your team name).
     entity="mirkothalmann-helmholtz-munich",
@@ -294,3 +337,4 @@ for epoch in tqdm(range(num_epochs)):
                str(epoch) + '.pth')
 
 wandb.finish()
+ """

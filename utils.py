@@ -216,7 +216,7 @@ def shared_nohist(df, n_trials, n_participants_total):
     return df_new
 
 
-def format_to_torch(df, col_pid, cols_x, col_y):
+def format_to_torch(df, col_pid, cols_x, col_y, col_y_shifted):
     """
     Converts a pandas DataFrame into 3D NumPy arrays suitable for PyTorch input.
 
@@ -224,12 +224,14 @@ def format_to_torch(df, col_pid, cols_x, col_y):
     ----------
     df : pandas.DataFrame
         The input DataFrame containing all relevant data.
-    col_pid : list of str
-        List of column names used to identify unique groups (e.g., patient or session IDs).
+    col_pid : str
+        Column name used to identify unique groups (e.g., patient or session IDs).
     cols_x : list of str
         List of feature column names to be used as input (X).
-    col_y : list of str
-        List of target column names to be used as output (y).
+    col_y : str
+        Name of target column to be used as output (y).
+    col_y_shifted : list of str
+        Name of shifted target column to be appended to X.
 
     Returns:
     -------
@@ -244,10 +246,68 @@ def format_to_torch(df, col_pid, cols_x, col_y):
     - It stacks all groups into a single 3D array for both inputs and targets.
     - Useful for preparing time-series or sequential data for deep learning models in PyTorch.
     """
-    df_x = df[col_pid + cols_x].copy()
+    df_x = df[col_pid + cols_x + col_y_shifted].copy()
     df_y = df[col_pid + col_y].copy()
-    grouped_x = df_x.groupby(col_pid)[cols_x].apply(lambda x: x.to_numpy())
+    grouped_x = df_x.groupby(
+        col_pid)[cols_x + col_y_shifted].apply(lambda x: x.to_numpy())
     grouped_y = df_y.groupby(col_pid)[col_y].apply(lambda x: x.to_numpy())
     X_3d = torch.from_numpy(np.stack(grouped_x.to_numpy()))
     y_3d = torch.from_numpy(np.stack(grouped_y.to_numpy()))
     return X_3d, y_3d
+
+
+def train_dev_split(df, splittype, n_trial_split=None):
+    """
+    Splits a DataFrame into training and development sets based on a specified strategy.
+
+    Parameters:
+    ----------
+    df : pandas.DataFrame
+        The input DataFrame containing a 'trial_id' column used for splitting.
+    splittype : str
+        The strategy used for splitting. Options:
+        - "first_vs_second_half": uses `n_trial_split` to divide trials.
+        - "every_second": assigns every second trial to the training set.
+    n_trial_split : int, optional
+        The trial ID threshold used when `splittype` is "first_vs_second_half".
+
+    Returns:
+    -------
+    df_train : pandas.DataFrame
+        Subset of the original DataFrame marked as training data.
+    df_dev : pandas.DataFrame
+        Subset of the original DataFrame marked as development data.
+    """
+    match splittype:
+        case "first_vs_second_half":
+            df["is_train"] = df["trial_id"] <= n_trial_split
+        case "every_second":
+            df["is_train"] = df["trial_id"] % 2 == 1
+    dict_groups = dict(tuple(df.groupby('is_train')))
+    df_train = dict_groups[True]
+    df_dev = dict_groups[False]
+    return df_train, df_dev
+
+
+def shift_y(df):
+    """
+    Adds a lagged version of the 'right_picked' column to the DataFrame.
+
+    The lag is computed within each 'sid' group, shifting values by one trial.
+    Missing values (e.g., first trial in each group) are filled with 0.
+
+    Parameters:
+    ----------
+    df : pandas.DataFrame
+        The input DataFrame containing 'sid' and 'right_picked' columns.
+
+    Returns:
+    -------
+    df : pandas.DataFrame
+        The modified DataFrame with a new column 'right_picked_prev'.
+    """
+    df["right_picked_prev"] = df.groupby(
+        "sid")["right_picked"].shift(1)
+    df.fillna(value={"right_picked_prev": 0}, inplace=True)
+    df["right_picked_prev"] = df["right_picked_prev"].astype(int)
+    return df
