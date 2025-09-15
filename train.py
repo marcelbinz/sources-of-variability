@@ -65,34 +65,18 @@ l_dfs = list(map(ut.shift_y, [
 df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = l_dfs[
     0], l_dfs[1], l_dfs[2], l_dfs[3]
 
-# train dev split
-df_itc_original_train, df_itc_original_dev = ut.train_dev_split(
-    df_itc_original, "first_vs_second_half", n_trial_split=100)
-df_itc_id_nohist_train, df_itc_id_nohist_dev = ut.train_dev_split(
-    df_itc_id_nohist, "first_vs_second_half", n_trial_split=100)
-df_itc_shared_hist_train, df_itc_shared_hist_dev = ut.train_dev_split(
-    df_itc_shared_hist, "first_vs_second_half", n_trial_split=100)
-df_itc_shared_nohist_train, df_itc_shared_nohist_dev = ut.train_dev_split(
-    df_itc_shared_nohist, "first_vs_second_half", n_trial_split=100)
+# train dev split and convert to 3d torch arrays that can be used by model
 
-# convert to 3d torch arrays that can be used by model
-X_original_train, y_original_train = ut.format_to_torch(
-    df_itc_original_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
-X_id_nohist_train, y_id_nohist_train = ut.format_to_torch(
-    df_itc_id_nohist_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
-X_shared_hist_train, y_shared_hist_train = ut.format_to_torch(
-    df_itc_shared_hist_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
-X_shared_nohist_train, y_shared_nohist_train = ut.format_to_torch(
-    df_itc_shared_nohist_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+partial_split_and_format = partial(
+    ut.split_and_format, splittype="first_vs_second_half", n_trial_split=100,
+    col_pid=col_pid, cols_x=cols_x, col_y=col_y, col_y_shifted=col_y_shifted
+)
 
-X_original_dev, y_original_dev = ut.format_to_torch(
-    df_itc_original_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
-X_id_nohist_dev, y_id_nohist_dev = ut.format_to_torch(
-    df_itc_id_nohist_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
-X_shared_hist_dev, y_shared_hist_dev = ut.format_to_torch(
-    df_itc_shared_hist_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
-X_shared_nohist_dev, y_shared_nohist_dev = ut.format_to_torch(
-    df_itc_shared_nohist_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted)
+l_df_train_dev = list(map(
+    partial_split_and_format,
+    [df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist],
+    ["original", "id_nohist", "shared_hist", "shared_nohist"]
+))
 
 
 batch_size = 32
@@ -122,9 +106,10 @@ run = wandb.init(
     }
 )
 
-y_original_train = y_original_train[0:n_participants_total, :, :]
-X_original_train = X_original_train[0:n_participants_total, :, :]
-
+y_original_train = l_df_train_dev[0]["y_train"][0:n_participants_total, :, :]
+X_original_train = l_df_train_dev[0]["X_train"][0:n_participants_total, :, :]
+y_original_dev = l_df_train_dev[0]["y_dev"][0:n_participants_total, :, :]
+X_original_dev = l_df_train_dev[0]["X_dev"][0:n_participants_total, :, :]
 
 # create torch data loader
 dataset_train = TensorDataset(X_original_train, y_original_train)

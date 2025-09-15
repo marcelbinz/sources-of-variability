@@ -289,6 +289,63 @@ def train_dev_split(df, splittype, n_trial_split=None):
     return df_train, df_dev
 
 
+def split_and_format(my_df, condition, splittype, n_trial_split, col_pid, cols_x, col_y, col_y_shifted):
+    """
+    Splits a DataFrame into training and development sets, formats them for PyTorch input,
+    and returns a dictionary containing the split and formatted data along with metadata.
+
+    Parameters:
+    ----------
+    my_df : pd.DataFrame
+        The input DataFrame containing the full dataset.
+    condition : str
+        A label or identifier for the condition or experimental setting.
+    splittype : str
+        The type of splitting strategy to use (e.g., 'random', 'sequential').
+    n_trial_split : int
+        Number of trials or samples to include in the training split.
+    col_pid : str
+        Column name representing participant or subject ID.
+    cols_x : list of str
+        List of column names to be used as input features.
+    col_y : str
+        Column name representing the target variable.
+    col_y_shifted : str
+        Column name for the shifted target variable (e.g., for sequence prediction).
+
+    Returns:
+    -------
+    dict
+        A dictionary containing:
+            - "condition": str, the input condition label
+            - "df_train": pd.DataFrame, training subset of the original DataFrame
+            - "df_dev": pd.DataFrame, development subset of the original DataFrame
+            - "X_train": torch.Tensor, formatted training input features
+            - "y_train": torch.Tensor, formatted training target values
+            - "X_dev": torch.Tensor, formatted development input features
+            - "y_dev": torch.Tensor, formatted development target values
+    """
+    my_df_train, my_df_dev = train_dev_split(
+        my_df, splittype, n_trial_split=n_trial_split
+    )
+    X_train, y_train = format_to_torch(
+        my_df_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted
+    )
+    X_dev, y_dev = format_to_torch(
+        my_df_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted
+    )
+    df_out = {
+        "condition": condition,
+        "df_train": my_df_train,
+        "df_dev": my_df_dev,
+        "X_train": X_train,
+        "y_train": y_train,
+        "X_dev": X_dev,
+        "y_dev": y_dev
+    }
+    return df_out
+
+
 def shift_y(df):
     """
     Adds a lagged version of the 'right_picked' column to the DataFrame.
