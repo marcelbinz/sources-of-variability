@@ -24,6 +24,13 @@ def parseargs():
         parser.add_argument(*args, **kwargs)
 
     aa(
+        "--condition_name",
+        type=str,
+        default="original",
+        choices=["original", "id_nohist", "shared_hist", "shared_nohist"],
+        help="Which condition to run.",
+    )
+    aa(
         "--rnd_seed",
         type=int,
         default=1,
@@ -33,13 +40,13 @@ def parseargs():
         "--d_model",
         type=int,
         default=64,
-        choices=[16, 32, 64],
+        choices=[4, 8, 16, 32, 64],
     )
     aa(
         "--d_ff",
         type=int,
         default=256,
-        choices=[64, 128, 256],
+        choices=[32, 64, 128, 256],
     )
     aa(
         "--is_testcase",
@@ -47,13 +54,24 @@ def parseargs():
         default=True,
         help="If True, only use 200 participants to test the code. If False, use all participants.",
     )
+    aa(
+        "--num_layers",
+        type=int,
+        default=4,
+        choices=[1, 2, 4],
+        help="Number of transformer encoder layers.",
+    )
     args = parser.parse_args()
     return args
 
+    
 
-def run(d_model=64, d_ff=256, is_testcase=True, rnd_seed=1):
+def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_layers=4):
 
     # ===================== Setup =====================
+
+    condition_names = ["original", "id_nohist", "shared_hist", "shared_nohist"]
+    condition_id = condition_names.index(condition_name)
 
     load_from_osf = False  # when local file is available
 
@@ -115,11 +133,11 @@ def run(d_model=64, d_ff=256, is_testcase=True, rnd_seed=1):
         partial_split_and_format,
         [df_itc_original, df_itc_id_nohist,
             df_itc_shared_hist, df_itc_shared_nohist],
-        ["original", "id_nohist", "shared_hist", "shared_nohist"]
+        condition_names
     ))
 
     batch_size = 32
-    num_epochs = 100
+    num_epochs = 300
     lr = 3e-4
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -135,22 +153,27 @@ def run(d_model=64, d_ff=256, is_testcase=True, rnd_seed=1):
     run = wandb.init(
         entity="mirkothalmann-helmholtz-munich",
         project="source-of-variablity",
-        name=f"condition=original_dmodel={d_model}_dff={d_ff}",
+        name=f"condition={condition_name}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}",
         config={
             "subset_participants": n_participants_subset,
             "learning_rate": lr,
             "architecture": "CausalTF with learned Pos. Encoding",
             "dataset": "Agrawal et al. (2023) JEP:G",
+            "condition": condition_name,
             "epochs": num_epochs,
             "d_model": d_model,
             "d_ff": d_ff,
+            "num_layers": num_layers,
+            "rnd_seed": rnd_seed,
+            "is_testcase": is_testcase,
         }
     )
 
-    y_original_train = l_df_train_dev[0]["y_train"][0:n_participants_subset, :, :]
-    X_original_train = l_df_train_dev[0]["X_train"][0:n_participants_subset, :, :]
-    y_original_dev = l_df_train_dev[0]["y_dev"][0:n_participants_subset, :, :]
-    X_original_dev = l_df_train_dev[0]["X_dev"][0:n_participants_subset, :, :]
+    # select the data from the relevant condition
+    y_original_train = l_df_train_dev[condition_id]["y_train"][0:n_participants_subset, :, :]
+    X_original_train = l_df_train_dev[condition_id]["X_train"][0:n_participants_subset, :, :]
+    y_original_dev = l_df_train_dev[condition_id]["y_dev"][0:n_participants_subset, :, :]
+    X_original_dev = l_df_train_dev[condition_id]["X_dev"][0:n_participants_subset, :, :]
 
     # create torch data loader
     dataset_train = TensorDataset(X_original_train, y_original_train)
@@ -161,7 +184,7 @@ def run(d_model=64, d_ff=256, is_testcase=True, rnd_seed=1):
     dataloader_dev = DataLoader(
         dataset_dev, batch_size=batch_size, shuffle=True)
 
-    model = mod.CausalEncoder(d_model=d_model, ff=d_ff).to(device)
+    model = mod.CausalEncoder(d_model=d_model, ff=d_ff, num_layers=num_layers).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.BCEWithLogitsLoss()
 
@@ -197,174 +220,9 @@ def run(d_model=64, d_ff=256, is_testcase=True, rnd_seed=1):
             "dev/loss_epoch": dev_loss_total / num_dev_batches,
         })
 
-        torch.save(model, 'models/condition_original/epoch=' +
+        torch.save(model, 'models/' + condition_name + '/epoch=' +
                    str(epoch) + '.pth')
     wandb.finish()
-
-    # ===================== 2. Model: By-Participant and History =====================
-
-    """ 
-    run = wandb.init(
-        # Set the wandb entity where your project will be logged (generally your team name).
-        entity="mirkothalmann-helmholtz-munich",
-        # Set the wandb project where this run will be logged.
-        project="source-of-variablity",
-        # Track hyperparameters and run metadata.
-        name="condition=ID-NoHistory",
-        config={
-            "subset_participants": n_participants_subset,
-            "learning_rate": lr,
-            "architecture": "CausalTF with learned Pos. Encoding",
-            "dataset": "Agrawal et al. (2023) JEP:G",
-            "epochs": num_epochs,
-        }
-    )
-
-
-    y_id_nohist = y_id_nohist[0:n_participants_subset, :, :]
-    X_id_nohist = X_id_nohist[0:n_participants_subset, :, :]
-
-    y_id_nohist_shifted = torch.cat(
-        [torch.zeros(n_participants_subset, 1, 1), y_id_nohist[:, :-1, :]], dim=1)
-    X_id_nohist = torch.cat([X_id_nohist, y_id_nohist_shifted], dim=-1)
-
-
-    # create torch data loader
-    dataset = TensorDataset(X_id_nohist, y_id_nohist)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-
-    model = mod.CausalEncoder().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.BCEWithLogitsLoss()
-
-    for epoch in tqdm(range(num_epochs)):
-        for batch_x, batch_y in dataloader:
-            batch_x = batch_x.to(device).float()
-            batch_y = batch_y.to(device).float()
-
-            outputs = model(batch_x)
-            loss = criterion(outputs, batch_y)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            wandb.log({"train/loss_step": loss.item()})
-
-        torch.save(model, 'models/condition_id_nohist/epoch=' +
-                str(epoch) + '.pth')
-    wandb.finish()
-
-    # ===================== 3. Model: Shared and History =====================
-
-
-    run = wandb.init(
-        # Set the wandb entity where your project will be logged (generally your team name).
-        entity="mirkothalmann-helmholtz-munich",
-        # Set the wandb project where this run will be logged.
-        project="source-of-variablity",
-        # Track hyperparameters and run metadata.
-        name="condition=Shared-History",
-        config={
-            "subset_participants": n_participants_subset,
-            "learning_rate": lr,
-            "architecture": "CausalTF with learned Pos. Encoding",
-            "dataset": "Agrawal et al. (2023) JEP:G",
-            "epochs": num_epochs,
-        }
-    )
-
-    y_shared_hist = y_shared_hist[0:n_participants_subset, :, :]
-    X_shared_hist = X_shared_hist[0:n_participants_subset, :, :]
-
-    y_shared_hist_shifted = torch.cat(
-        [torch.zeros(n_participants_subset, 1, 1), y_shared_hist[:, :-1, :]], dim=1)
-    X_shared_hist = torch.cat([X_shared_hist, y_shared_hist_shifted], dim=-1)
-
-
-    # create torch data loader
-    dataset = TensorDataset(X_shared_hist, y_shared_hist)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-
-    model = mod.CausalEncoder().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.BCEWithLogitsLoss()
-
-    for epoch in tqdm(range(num_epochs)):
-        for batch_x, batch_y in dataloader:
-            batch_x = batch_x.to(device).float()
-            batch_y = batch_y.to(device).float()
-
-            outputs = model(batch_x)
-            loss = criterion(outputs, batch_y)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            wandb.log({"train/loss_step": loss.item()})
-
-        torch.save(model, 'models/condition_shared_hist/epoch=' +
-                str(epoch) + '.pth')
-    wandb.finish()
-
-    # ===================== 4. Model: Shared and No History =====================
-
-
-    run = wandb.init(
-        # Set the wandb entity where your project will be logged (generally your team name).
-        entity="mirkothalmann-helmholtz-munich",
-        # Set the wandb project where this run will be logged.
-        project="source-of-variablity",
-        # Track hyperparameters and run metadata.
-        name="condition=Shared-NoHistory",
-        config={
-            "subset_participants": n_participants_subset,
-            "learning_rate": lr,
-            "architecture": "CausalTF with learned Pos. Encoding",
-            "dataset": "Agrawal et al. (2023) JEP:G",
-            "epochs": num_epochs,
-        }
-    )
-
-    y_shared_nohist = y_shared_nohist[0:n_participants_subset, :, :]
-    X_shared_nohist = X_shared_nohist[0:n_participants_subset, :, :]
-
-    y_shared_nohist_shifted = torch.cat(
-        [torch.zeros(n_participants_subset, 1, 1), y_shared_nohist[:, :-1, :]], dim=1)
-    X_shared_nohist = torch.cat([X_shared_nohist, y_shared_nohist_shifted], dim=-1)
-
-
-    # create torch data loader
-    dataset = TensorDataset(X_shared_nohist, y_shared_nohist)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-
-    model = mod.CausalEncoder().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.BCEWithLogitsLoss()
-
-    for epoch in tqdm(range(num_epochs)):
-        for batch_x, batch_y in dataloader:
-            batch_x = batch_x.to(device).float()
-            batch_y = batch_y.to(device).float()
-
-            outputs = model(batch_x)
-            loss = criterion(outputs, batch_y)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            wandb.log({"train/loss_step": loss.item()})
-
-        torch.save(model, 'models/condition_shared_nohist/epoch=' +
-                str(epoch) + '.pth')
-
-    wandb.finish()
-    """
 
 
 if __name__ == "__main__":
@@ -374,8 +232,10 @@ if __name__ == "__main__":
     torch.manual_seed(args.rnd_seed)
 
     run(
+        condition_name=args.condition_name,
         d_model=args.d_model,
         d_ff=args.d_ff,
         is_testcase=args.is_testcase,
         rnd_seed=args.rnd_seed,
+        num_layers=args.num_layers
     )

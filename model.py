@@ -14,7 +14,7 @@ class LearnedPositionalEncoding(nn.Module):
 
 
 class CausalEncoder(nn.Module):
-    def __init__(self, d_model=64, nhead=8, num_layers=4, ff=256, dropout=0.0, out_dim=1, in_dim=5, max_len=195):
+    def __init__(self, d_model=64, nhead=4, num_layers=4, ff=256, dropout=0.0, out_dim=1, in_dim=5, max_len=195):
         super().__init__()
         layer = nn.TransformerEncoderLayer(
             d_model, nhead, ff, dropout, batch_first=True)
