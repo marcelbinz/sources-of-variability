@@ -76,10 +76,8 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
     load_from_osf = False  # when local file is available
 
     # Create Model Dirs
-    l_save_dirs = ['models/condition_original', "models/condition_id_nohist",
-                   "models/condition_shared_hist", "models/condition_shared_nohist"]
-    partial_makedirs = partial(os.makedirs, exist_ok=True)
-    _ = list(map(partial_makedirs, l_save_dirs))
+    save_dir = f"models/condition_{condition_name}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/"
+    os.makedirs(save_dir, exist_ok=True)
 
     # ===================== Load Data =====================
 
@@ -220,8 +218,8 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
             "dev/loss_epoch": dev_loss_total / num_dev_batches,
         })
 
-        torch.save(model, 'models/' + condition_name + '/epoch=' +
-                   str(epoch) + '.pth')
+        if epoch % 50 == 0:
+            torch.save(model, save_dir + '/epoch=' + str(epoch) + '.pth')
     wandb.finish()
 
 
