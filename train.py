@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 import wandb
+import logging
 
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
@@ -15,6 +16,9 @@ from functools import partial
 # home-grown
 import utils as ut
 import model as mod
+
+os.environ['PYTHONIOENCODING'] = 'UTF-8'
+os.environ['CUDA_LAUNCH_BLOCKING'] = str(1)
 
 
 def parseargs():
@@ -50,8 +54,9 @@ def parseargs():
     )
     aa(
         "--is_testcase",
-        type=bool,
-        default=True,
+        type=str,
+        default="True",
+        choices=["True", "False"],
         help="If True, only use 200 participants to test the code. If False, use all participants.",
     )
     aa(
@@ -65,10 +70,29 @@ def parseargs():
     return args
 
     
+def init_logger(log_file='train-itc.log', level=logging.INFO):
+    # Create log directory if it doesn't exist
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
-def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_layers=4):
+    # Configure logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(level)
+
+    # Prevent duplicate handlers if re-initialized
+    if not logger.handlers:
+        file_handler = logging.FileHandler(log_file)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    return logger
+
+def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, num_layers=4):
 
     # ===================== Setup =====================
+    # Example usage
+    logger = init_logger(f"""logs/train-itc-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log""")
+    logger.info("Logger initialized and ready to roll.")
 
     condition_names = ["original", "id_nohist", "shared_hist", "shared_nohist"]
     condition_id = condition_names.index(condition_name)
@@ -99,6 +123,7 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
 
     # note. all participants provided exactly 195 trials
     n_trials = 195
+    n_trials_train = 130
 
     # ===================== Prepare Data =====================
 
@@ -123,7 +148,7 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
     # train dev split and convert to 3d torch arrays that can be used by model
 
     partial_split_and_format = partial(
-        ut.split_and_format, splittype="first_vs_second_half", n_trial_split=100,
+        ut.split_and_format, splittype="first_vs_second_half", n_trial_split=n_trials_train,
         col_pid=col_pid, cols_x=cols_x, col_y=col_y, col_y_shifted=col_y_shifted
     )
 
@@ -135,7 +160,7 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
     ))
 
     batch_size = 32
-    num_epochs = 300
+    num_epochs = 150
     lr = 3e-4
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -143,7 +168,7 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
     # ===================== 1. Model: By-Participant and History =====================
 
     # just to subset and test, comment otherwise
-    if is_testcase:
+    if is_testcase == "True":
         n_participants_subset = 10
     else:
         n_participants_subset = n_participants_total
@@ -151,7 +176,7 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
     run = wandb.init(
         entity="mirkothalmann-helmholtz-munich",
         project="source-of-variablity",
-        name=f"condition={condition_name}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}",
+        name=f"condition={condition_name}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={n_trials_train}",
         config={
             "subset_participants": n_participants_subset,
             "learning_rate": lr,
@@ -164,21 +189,27 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
             "num_layers": num_layers,
             "rnd_seed": rnd_seed,
             "is_testcase": is_testcase,
+            "n_trials_train": n_trials_train,
         }
     )
 
     # select the data from the relevant condition
-    y_original_train = l_df_train_dev[condition_id]["y_train"][0:n_participants_subset, :, :]
-    X_original_train = l_df_train_dev[condition_id]["X_train"][0:n_participants_subset, :, :]
-    y_original_dev = l_df_train_dev[condition_id]["y_dev"][0:n_participants_subset, :, :]
-    X_original_dev = l_df_train_dev[condition_id]["X_dev"][0:n_participants_subset, :, :]
+    y_train = l_df_train_dev[condition_id]["y_train"][0:n_participants_subset, :, :]
+    X_train = l_df_train_dev[condition_id]["X_train"][0:n_participants_subset, :, :]
+    y_dev = l_df_train_dev[condition_id]["y_dev"][0:n_participants_subset, :, :]
+    X_dev = l_df_train_dev[condition_id]["X_dev"][0:n_participants_subset, :, :]
+
+    # # label smoothing
+    # smoothing = .1
+    # y_train * (1 - smoothing) + 0.5 * smoothing
+    # y_dev * (1 - smoothing) + 0.5 * smoothing
 
     # create torch data loader
-    dataset_train = TensorDataset(X_original_train, y_original_train)
+    dataset_train = TensorDataset(X_train, y_train)
     dataloader_train = DataLoader(
         dataset_train, batch_size=batch_size, shuffle=True)
 
-    dataset_dev = TensorDataset(X_original_dev, y_original_dev)
+    dataset_dev = TensorDataset(X_dev, y_dev)
     dataloader_dev = DataLoader(
         dataset_dev, batch_size=batch_size, shuffle=True)
 
@@ -207,8 +238,9 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase=True, rnd_seed=1, num_
         for batch_x, batch_y in dataloader_dev:
             batch_x = batch_x.to(device).float()
             batch_y = batch_y.to(device).float()
-
+            logger.info(f"""batch_y.shape = {batch_y.shape}""")
             outputs = model(batch_x)
+            logger.info(f"""outputs.shape = {outputs.shape}""")
             loss_dev = criterion(outputs, batch_y)
             dev_loss_total += loss_dev.item()
 
