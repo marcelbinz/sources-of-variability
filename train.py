@@ -228,8 +228,13 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
             batch_y = batch_y.to(device).float()
 
             outputs = model(batch_x)
+            # loss
             loss = criterion(outputs, batch_y)
             train_loss_total += loss.item()
+            # accuracy
+            pred_right = (outputs > 0).int()
+            correct = (pred_right == batch_y.int()).sum().item()
+            train_acc = correct / (batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
 
             optimizer.zero_grad()
             loss.backward()
@@ -243,11 +248,17 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
             logger.info(f"""outputs.shape = {outputs.shape}""")
             loss_dev = criterion(outputs, batch_y)
             dev_loss_total += loss_dev.item()
+            # accuracy
+            pred_right = (outputs > 0).int()
+            correct = (pred_right == batch_y.int()).sum().item()
+            dev_acc = correct / (batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
 
         wandb.log({
             "epoch": epoch,
             "train/loss_epoch": train_loss_total / num_train_batches,
             "dev/loss_epoch": dev_loss_total / num_dev_batches,
+            "train/acc_epoch": train_acc,
+            "dev/acc_epoch": dev_acc
         })
 
         if epoch % 50 == 0:
