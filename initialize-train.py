@@ -12,16 +12,19 @@ base_dict = {
     "python_file": "train.py",
 }
 
-l_condition_names = ["original"] #, "id_nohist", "shared_hist", "shared_nohist"]
-l_d_model = [4, 8]
-l_d_ff = [64, 128]
-l_is_testcase = [False]
-l_num_layers = [1, 2, 4]
+# , "id_nohist", "shared_hist", "shared_nohist"]
+l_condition_names = ["original"]
+l_d_model = [32]
+l_d_ff = [256]
+l_is_testcase = ["False"]
+l_num_layers = [2]
+l_masktype = ["causal", "windowed_causal"]
+l_windowsize = [1, 5]
 
 # Generate all combinations
 combinations = list(
     itertools.product(
-        l_condition_names, l_d_model, l_d_ff, l_is_testcase, l_num_layers
+        l_condition_names, l_d_model, l_d_ff, l_is_testcase, l_num_layers, l_masktype, l_windowsize
     )
 )
 
@@ -29,7 +32,7 @@ combinations = list(
 arg_combinations = []
 #  in combinations:
 for (
-    condition_name, d_model, d_ff, is_testcase, num_layers
+    condition_name, d_model, d_ff, is_testcase, num_layers, masktype, windowsize
 ) in combinations:  # , agreement
     temp_dict = base_dict.copy()
     temp_dict.update(
@@ -39,6 +42,8 @@ for (
             "d_ff": d_ff,
             "is_testcase": is_testcase,
             "num_layers": num_layers,
+            "masktype": masktype,
+            "windowsize": windowsize,
         }
     )
     arg_combinations.append(temp_dict)
@@ -51,6 +56,8 @@ def run_command(args):
         --d_ff {args['d_ff']} \
         --is_testcase {args['is_testcase']} \
         --num_layers {args['num_layers']} \
+        --masktype {args['masktype']} \
+        --windowsize {args['windowsize']} \
         --condition_name {args['condition_name']}"
     subprocess.run(command, shell=True)
 

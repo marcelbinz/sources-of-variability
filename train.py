@@ -66,10 +66,23 @@ def parseargs():
         choices=[1, 2, 4],
         help="Number of transformer encoder layers.",
     )
+    aa(
+        "--masktype",
+        type=str,
+        default="causal",
+        choices=["causal", "windowed_causal"],
+        help="Type of attention mask to use in the transformer.",
+    )
+    aa(
+        "--windowsize",
+        type=int,
+        default=5,
+        help="Window size for windowed causal mask.",
+    )
     args = parser.parse_args()
     return args
 
-    
+
 def init_logger(log_file='train-itc.log', level=logging.INFO):
     # Create log directory if it doesn't exist
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -81,17 +94,20 @@ def init_logger(log_file='train-itc.log', level=logging.INFO):
     # Prevent duplicate handlers if re-initialized
     if not logger.handlers:
         file_handler = logging.FileHandler(log_file)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s')
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
     return logger
 
-def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, num_layers=4):
+
+def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, num_layers=4, masktype="causal", windowsize=5):
 
     # ===================== Setup =====================
     # Example usage
-    logger = init_logger(f"""logs/train-itc-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log""")
+    logger = init_logger(
+        f"""logs/train-itc-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log""")
     logger.info("Logger initialized and ready to roll.")
 
     condition_names = ["original", "id_nohist", "shared_hist", "shared_nohist"]
@@ -100,7 +116,7 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     load_from_osf = False  # when local file is available
 
     # Create Model Dirs
-    save_dir = f"models/condition_{condition_name}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/"
+    save_dir = f"models/condition_{condition_name}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
     os.makedirs(save_dir, exist_ok=True)
 
     # ===================== Load Data =====================
@@ -176,7 +192,7 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     run = wandb.init(
         entity="mirkothalmann-helmholtz-munich",
         project="source-of-variablity",
-        name=f"condition={condition_name}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={n_trials_train}",
+        name=f"condition={condition_name}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={n_trials_train}_masktype={masktype}_windowsize={windowsize}",
         config={
             "subset_participants": n_participants_subset,
             "learning_rate": lr,
@@ -190,6 +206,8 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
             "rnd_seed": rnd_seed,
             "is_testcase": is_testcase,
             "n_trials_train": n_trials_train,
+            "masktype": masktype,
+            "windowsize": windowsize,
         }
     )
 
@@ -213,7 +231,9 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     dataloader_dev = DataLoader(
         dataset_dev, batch_size=batch_size, shuffle=True)
 
-    model = mod.CausalEncoder(d_model=d_model, ff=d_ff, num_layers=num_layers).to(device)
+    model = mod.CausalEncoder(d_model=d_model, ff=d_ff,
+                              num_layers=num_layers, masktype=masktype,
+                              windowsize=windowsize).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.BCEWithLogitsLoss()
 
@@ -234,7 +254,8 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
             # accuracy
             pred_right = (outputs > 0).int()
             correct = (pred_right == batch_y.int()).sum().item()
-            train_acc = correct / (batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
+            train_acc = correct / \
+                (batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
 
             optimizer.zero_grad()
             loss.backward()
@@ -251,7 +272,8 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
             # accuracy
             pred_right = (outputs > 0).int()
             correct = (pred_right == batch_y.int()).sum().item()
-            dev_acc = correct / (batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
+            dev_acc = correct / \
+                (batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
 
         wandb.log({
             "epoch": epoch,

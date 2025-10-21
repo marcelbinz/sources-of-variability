@@ -14,7 +14,8 @@ class LearnedPositionalEncoding(nn.Module):
 
 
 class CausalEncoder(nn.Module):
-    def __init__(self, d_model=64, nhead=4, num_layers=4, ff=256, dropout=0.0, out_dim=1, in_dim=5, max_len=195):
+    def __init__(self, d_model=64, nhead=4, num_layers=4, ff=256, dropout=0.0,
+                 out_dim=1, in_dim=5, max_len=195, masktype="causal", windowsize=5):
         super().__init__()
         layer = nn.TransformerEncoderLayer(
             d_model, nhead, ff, dropout, batch_first=True)
@@ -22,14 +23,34 @@ class CausalEncoder(nn.Module):
         self.in_proj = nn.Linear(in_dim, d_model)
         self.out_proj = nn.Linear(d_model, out_dim)
         self.pos_enc = LearnedPositionalEncoding(d_model, max_len)
+        self.masktype = masktype  # or "windowed_causal"
+        self.windowsize = windowsize  # for windowed causal mask
+
+    def mask(self, masktype, S, n, device):
+        if masktype == "causal":
+            return self.causal_mask(S, device)
+        elif masktype == "windowed_causal":
+            return self.windowed_causal_mask(S, n, device)
+        else:
+            raise ValueError(f"Unknown mask type: {masktype}")
 
     @staticmethod
     def causal_mask(S, device):
         return torch.triu(torch.full((S, S), float("-inf"), device=device), diagonal=1)
 
+    @staticmethod
+    def windowed_causal_mask(S, n, device):
+        # Mask everything outside the window [i - (n-1), i]
+        # i.e., look back n steps (and also consider the current one, therefore n-1)
+        return (
+            torch.tril(torch.full((S, S), float("-inf"), device=device), diagonal=-(n - 1)) +
+            torch.triu(torch.full((S, S), float(
+                "-inf"), device=device), diagonal=1)
+        )
+
     def forward(self, x):
         S = x.size(1)
-        mask = self.causal_mask(S, x.device)
+        mask = self.mask(self.masktype, S, x.device)
 
         h = self.in_proj(x)
         h = self.pos_enc(h)
