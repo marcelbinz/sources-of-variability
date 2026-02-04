@@ -50,7 +50,7 @@ class CausalEncoder(nn.Module):
 
     def forward(self, x):
         S = x.size(1)
-        mask = self.mask(self.masktype, S, x.device)
+        mask = self.mask(self.masktype, S, self.windowsize, x.device)
 
         h = self.in_proj(x)
         h = self.pos_enc(h)
