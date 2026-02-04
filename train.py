@@ -35,6 +35,21 @@ def parseargs():
         help="Which condition to run.",
     )
     aa(
+        "--shuffle_variables",
+        choices=["val", "time", "choice_prev"],
+        help="Besides conditions, additional variables to shuffle within a given participant. Note that shuffle_variables contains both swap_colnames and shuffle_single_colnames.",
+    )
+    aa(
+        "--swap_colnames",
+        type=list,
+        help="List of column name pairs (in a list) to swap within participants, e.g., 'right_val, left_val'.",
+    )
+    aa(
+        "--shuffle_single_colnames",
+        type=list,
+        help="List of single column names to shuffle within participants.",
+    )
+    aa(
         "--rnd_seed",
         type=int,
         default=1,
@@ -102,7 +117,11 @@ def init_logger(log_file='train-itc.log', level=logging.INFO):
     return logger
 
 
-def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, num_layers=4, masktype="causal", windowsize=5):
+def run(
+        condition_name, shuffle_variables, swap_colnames, shuffle_single_colnames,
+        d_model=64, d_ff=256, is_testcase="True", 
+        rnd_seed=1, num_layers=4, masktype="causal", windowsize=5
+        ):
 
     # ===================== Setup =====================
     # Example usage
@@ -116,7 +135,8 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     load_from_osf = False  # when local file is available
 
     # Create Model Dirs
-    save_dir = f"models/condition_{condition_name}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
+    more_shuffle = "-".join(shuffle_variables)
+    save_dir = f"models/condition_{condition_name}/more_shuffle_{more_shuffle}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
     os.makedirs(save_dir, exist_ok=True)
 
     # ===================== Load Data =====================
@@ -156,10 +176,19 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
         df_itc_all, n_trials, n_participants_total)
 
     # shift y by one trial such that on trial t, model gets info about y from trial t-1
-    l_dfs = list(map(ut.shift_y, [
-        df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist]))
-    df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = l_dfs[
-        0], l_dfs[1], l_dfs[2], l_dfs[3]
+    l_dfs = list(map(ut.shift_y, [df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist]))
+
+    # shuffle more variables if specified
+    if len(shuffle_variables) > 0:
+        for colnames in swap_colnames:
+            f_partial_swap = partial(ut.swap_two_cols, colnames=colnames)
+            l_dfs = list(map(f_partial_swap, l_dfs))
+
+        for colname in shuffle_single_colnames:
+            f_partial_shuffle = partial(ut.shuffle_single_column, colname=colname)
+            l_dfs = list(map(f_partial_shuffle, l_dfs))
+
+    df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = l_dfs[0], l_dfs[1], l_dfs[2], l_dfs[3]
 
     # train dev split and convert to 3d torch arrays that can be used by model
 
@@ -216,11 +245,6 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     X_train = l_df_train_dev[condition_id]["X_train"][0:n_participants_subset, :, :]
     y_dev = l_df_train_dev[condition_id]["y_dev"][0:n_participants_subset, :, :]
     X_dev = l_df_train_dev[condition_id]["X_dev"][0:n_participants_subset, :, :]
-
-    # # label smoothing
-    # smoothing = .1
-    # y_train * (1 - smoothing) + 0.5 * smoothing
-    # y_dev * (1 - smoothing) + 0.5 * smoothing
 
     # create torch data loader
     dataset_train = TensorDataset(X_train, y_train)
@@ -296,9 +320,14 @@ if __name__ == "__main__":
 
     run(
         condition_name=args.condition_name,
+        shuffle_variables=args.shuffle_variables,
+        swap_colnames=args.swap_colnames,
+        shuffle_single_colnames=args.shuffle_single_colnames,
         d_model=args.d_model,
         d_ff=args.d_ff,
         is_testcase=args.is_testcase,
         rnd_seed=args.rnd_seed,
-        num_layers=args.num_layers
+        num_layers=args.num_layers,
+        masktype=args.masktype,
+        windowsize=args.windowsize,
     )
