@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 from functools import reduce
+from itertools import chain
 
 
 def load_raw_data(filter):
@@ -430,5 +431,28 @@ def shuffle_single_column(df, colname):
         return rng.choice(unique_vals, size=len(g))
 
     df[colname] = df.groupby("sid_unique")[colname].transform(sample_group)
+    return df
+
+
+def scale_fixed(x, mn, sd):
+    """ compute a scaled version of a variable by using predefined mean and sd """
+    return (x - mn) / sd
+
+def zscore_pairs(df, l_swap_colnames):
+    """
+    compute a z score across pairs of columns by using the mean and sd of the combined values of the two columns
+    
+    :param df: dataframe containing the columns to be z-scored
+    :param l_swap_colnames: pairs of column names for which to compute z scores across the combined values of the two columns
+    :return: dataframe with z-scaled columns
+    """
+    swap_colnames_flat = list(chain.from_iterable(l_swap_colnames))
+    stats = [df[vs].reset_index().melt(id_vars="index").value.agg(["mean", "std"]) for vs in l_swap_colnames]
+    d_stats = dict()
+    for idx, cn in enumerate(swap_colnames_flat):
+        d_stats[cn] = stats[int(np.floor(idx / 2))]
+    for k, v in d_stats.items():
+        df[k] = df[k].apply(scale_fixed, mn=v["mean"], sd=v["std"])
+
     return df
 
