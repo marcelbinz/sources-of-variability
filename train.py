@@ -6,12 +6,15 @@ import pandas as pd
 import torch
 import wandb
 import logging
+import ast
+
 
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 from scipy.stats import zscore
 from tqdm import tqdm
 from functools import partial
+
 
 # home-grown
 import utils as ut
@@ -33,6 +36,16 @@ def parseargs():
         default="original",
         choices=["original", "id_nohist", "shared_hist", "shared_nohist"],
         help="Which condition to run.",
+    )
+    aa(
+        "--swap_colnames",
+        type=str,
+        help='Quoted list of column name pairs (in a list) to swap within participants, e.g., "[["right_val", "left_val"], ["right_time", "left_time"]]"'
+    )
+    aa(
+        "--shuffle_single_colnames",
+        type=str,
+        help="Quoted list of single column names to shuffle within participants.",
     )
     aa(
         "--rnd_seed",
@@ -102,7 +115,11 @@ def init_logger(log_file='train-itc.log', level=logging.INFO):
     return logger
 
 
-def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, num_layers=4, masktype="causal", windowsize=5):
+def run(
+        condition_name, swap_colnames, shuffle_single_colnames,
+        d_model=64, d_ff=256, is_testcase="True", 
+        rnd_seed=1, num_layers=4, masktype="causal", windowsize=5
+        ):
 
     # ===================== Setup =====================
     # Example usage
@@ -113,10 +130,24 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     condition_names = ["original", "id_nohist", "shared_hist", "shared_nohist"]
     condition_id = condition_names.index(condition_name)
 
+    l_swap_colnames = ast.literal_eval(swap_colnames)
+    l_shuffle_single_colnames = ast.literal_eval(shuffle_single_colnames)
+
+    logger.info(f"""l_swap_colnames = {l_swap_colnames}""")
+    logger.info(f"""l_shuffle_single_colnames = {l_shuffle_single_colnames}""")
+
+    # when applied to different tasks as well, likely needs to be adapted to be more generalizable
+    swap_varnames = [sc[0].split("_")[-1] for sc in l_swap_colnames if len(sc) > 0]
+    l_shuffle_varnames = ["_".join(ssc.split("_")[1:]) for ssc in l_shuffle_single_colnames]
+    shuffle_variables = swap_varnames + l_shuffle_varnames
+
     load_from_osf = False  # when local file is available
 
     # Create Model Dirs
-    save_dir = f"models/condition_{condition_name}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
+    more_shuffle = "-".join(shuffle_variables)
+    if more_shuffle == "":
+        more_shuffle = "nothing"
+    save_dir = f"models/condition_{condition_name}/more_shuffle_{more_shuffle}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
     os.makedirs(save_dir, exist_ok=True)
 
     # ===================== Load Data =====================
@@ -149,17 +180,31 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     col_y_shifted = ["right_picked_prev"]
 
     # zscale X
-    df_itc_all[cols_x] = df_itc_all[cols_x].apply(zscore)
+    # df_itc_all[cols_x] = df_itc_all[cols_x].apply(zscore)
+
+    # compute z scores across pairs of columns
+    df_itc_all = ut.zscore_pairs(df_itc_all, l_swap_colnames)
 
     # shuffle trial ids and participant ids to create dfs with theoretical upper bounds on learning
     df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = ut.make_conditions(
         df_itc_all, n_trials, n_participants_total)
 
     # shift y by one trial such that on trial t, model gets info about y from trial t-1
-    l_dfs = list(map(ut.shift_y, [
-        df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist]))
-    df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = l_dfs[
-        0], l_dfs[1], l_dfs[2], l_dfs[3]
+    l_dfs = list(map(ut.shift_y, [df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist]))
+
+    # shuffle more variables if specified
+    if len(l_swap_colnames[0]) > 0:
+        for colnames in l_swap_colnames:
+            f_partial_swap = partial(ut.swap_two_cols, colnames=colnames)
+            l_dfs = list(map(f_partial_swap, l_dfs))
+    if (len(l_shuffle_single_colnames) > 0):
+        for colname in l_shuffle_single_colnames:
+            f_partial_shuffle = partial(ut.shuffle_single_column, colname=colname)
+            l_dfs = list(map(f_partial_shuffle, l_dfs))
+
+
+
+    #df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = l_dfs[0], l_dfs[1], l_dfs[2], l_dfs[3]
 
     # train dev split and convert to 3d torch arrays that can be used by model
 
@@ -168,12 +213,7 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
         col_pid=col_pid, cols_x=cols_x, col_y=col_y, col_y_shifted=col_y_shifted
     )
 
-    l_df_train_dev = list(map(
-        partial_split_and_format,
-        [df_itc_original, df_itc_id_nohist,
-            df_itc_shared_hist, df_itc_shared_nohist],
-        condition_names
-    ))
+    l_df_train_dev = list(map(partial_split_and_format, l_dfs, condition_names))
 
     batch_size = 32
     num_epochs = 150
@@ -192,13 +232,14 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     run = wandb.init(
         entity="mirkothalmann-helmholtz-munich",
         project="source-of-variablity",
-        name=f"condition={condition_name}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={n_trials_train}_masktype={masktype}_windowsize={windowsize}",
+        name=f"condition={condition_name}_moreshuffle={more_shuffle}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={n_trials_train}_masktype={masktype}_windowsize={windowsize}",
         config={
             "subset_participants": n_participants_subset,
             "learning_rate": lr,
             "architecture": "CausalTF with learned Pos. Encoding",
             "dataset": "Agrawal et al. (2023) JEP:G",
             "condition": condition_name,
+            "more_shuffle": more_shuffle,
             "epochs": num_epochs,
             "d_model": d_model,
             "d_ff": d_ff,
@@ -216,11 +257,6 @@ def run(condition_name, d_model=64, d_ff=256, is_testcase="True", rnd_seed=1, nu
     X_train = l_df_train_dev[condition_id]["X_train"][0:n_participants_subset, :, :]
     y_dev = l_df_train_dev[condition_id]["y_dev"][0:n_participants_subset, :, :]
     X_dev = l_df_train_dev[condition_id]["X_dev"][0:n_participants_subset, :, :]
-
-    # # label smoothing
-    # smoothing = .1
-    # y_train * (1 - smoothing) + 0.5 * smoothing
-    # y_dev * (1 - smoothing) + 0.5 * smoothing
 
     # create torch data loader
     dataset_train = TensorDataset(X_train, y_train)
@@ -296,9 +332,13 @@ if __name__ == "__main__":
 
     run(
         condition_name=args.condition_name,
+        swap_colnames=args.swap_colnames,
+        shuffle_single_colnames=args.shuffle_single_colnames,
         d_model=args.d_model,
         d_ff=args.d_ff,
         is_testcase=args.is_testcase,
         rnd_seed=args.rnd_seed,
-        num_layers=args.num_layers
+        num_layers=args.num_layers,
+        masktype=args.masktype,
+        windowsize=args.windowsize,
     )

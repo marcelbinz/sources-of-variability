@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 from functools import reduce
+from itertools import chain
 
 
 def load_raw_data(filter):
@@ -368,3 +369,90 @@ def shift_y(df):
     df.fillna(value={"right_picked_prev": 0}, inplace=True)
     df["right_picked_prev"] = df["right_picked_prev"].astype(int)
     return df
+
+def swap_two_cols(df, colnames, prop_swap=0.5):
+    """
+    Swap values between two columns for a random subset of rows within each participant group.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input dataframe containing the data.
+    colnames : list or tuple of str
+        Two column names whose values should be swapped.
+    prop_swap : float, optional (default=0.5)
+        Proportion of rows (per participant group) in which the values 
+        of the two columns will be swapped.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The dataframe with swapped values in the specified columns.
+    """
+    idxs_swap = (
+        df.groupby("sid_unique")
+          .sample(frac=prop_swap, random_state=1)
+          .index
+    )
+
+    to_be_swapped0 = df.loc[idxs_swap, colnames[0]]
+    to_be_swapped1 = df.loc[idxs_swap, colnames[1]]
+
+    df.loc[idxs_swap, colnames[0]] = to_be_swapped1
+    df.loc[idxs_swap, colnames[1]] = to_be_swapped0
+
+    return df
+
+
+def shuffle_single_column(df, colname):
+    """
+    Replace values in a column with random draws from its unique values,
+    applied independently within each participant group.
+
+    This produces a per-group shuffle where each row receives a random
+    value drawn uniformly from the set of unique values in the column.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input dataframe containing the data.
+    colname : str
+        Name of the column to shuffle.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The dataframe with the specified column shuffled within groups.
+    """
+    unique_vals = df[colname].unique()
+    rng = np.random.default_rng(seed=1)
+
+    def sample_group(g):
+        return rng.choice(unique_vals, size=len(g))
+
+    df[colname] = df.groupby("sid_unique")[colname].transform(sample_group)
+    return df
+
+
+def scale_fixed(x, mn, sd):
+    """ compute a scaled version of a variable by using predefined mean and sd """
+    return (x - mn) / sd
+
+def zscore_pairs(df, l_swap_colnames):
+    """
+    compute a z score across pairs of columns by using the mean and sd of the combined values of the two columns
+    
+    :param df: dataframe containing the columns to be z-scored
+    :param l_swap_colnames: pairs of column names for which to compute z scores across the combined values of the two columns
+    :return: dataframe with z-scaled columns
+    """
+    swap_colnames_flat = list(chain.from_iterable(l_swap_colnames))
+    stats = [df[vs].reset_index().melt(id_vars="index").value.agg(["mean", "std"]) for vs in l_swap_colnames]
+    d_stats = dict()
+    for idx, cn in enumerate(swap_colnames_flat):
+        d_stats[cn] = stats[int(np.floor(idx / 2))]
+    for k, v in d_stats.items():
+        df[k] = df[k].apply(scale_fixed, mn=v["mean"], sd=v["std"])
+
+    return df
+
