@@ -1,21 +1,28 @@
+rm(list = ls())
+
 library(tidyverse)
 library(grid)
 library(gridExtra)
 
 
-tbl_loss <- read_csv("wandb/run-20250805_035422-ioz2d946/wandb_export_2025-08-05T09_09_32.374+02_00.csv")
-tbl_plot <- tbl_loss %>% select(Step, ends_with("train/loss_step"))
-colnames(tbl_plot) <- c("Step", "Shared-NoHistory", "Shared-History", "ID-NoHistory", "ID-History")
+tbl_loss <- read_csv("wandb/wandb_export_2025-09-22T20_05_45.295+02_00.csv")
+tbl_plot <- tbl_loss %>% select(epoch, ends_with("dev/loss_epoch"))
 
-step_size <- round(max(tbl_plot$Step) / 20)
-tbl_plot$Step_bin <- floor(tbl_plot$Step / step_size) + 1
+conds <- str_match(colnames(tbl_plot)[2:5], "=([a-zA-Z-_]*)_")[, 2]
+conds <- str_replace(conds, "original", "ID-History")
+conds <- str_replace(conds, "shared_hist", "Shared-History")
+conds <- str_replace(conds, "shared_nohist", "Shared-NoHistory")
+conds <- str_replace(conds, "id_nohist", "ID-NoHistory")
+
+
+colnames(tbl_plot) <- c("Step", conds)
+
 
 # Create a data frame for the horizontal line
 chance_line <- data.frame(y = .5, label = "Chance Performance")
 
 tbl_plot_long <- tbl_plot %>% 
-  select(-Step) %>%
-  pivot_longer(-c(Step_bin), names_to = "Condition") %>%
+  pivot_longer(-c(Step), names_to = "Condition") %>%
   mutate(
     prob = exp(-value),
     History = as.numeric(!str_detect(Condition, "NoHistory")),
@@ -24,9 +31,12 @@ tbl_plot_long <- tbl_plot %>%
     ID = factor(ID, labels = c("Shared", "ID"), ordered = TRUE)
   )
 
-plt_prob <- tbl_plot_long %>% group_by(Step_bin, Condition, History, ID) %>%
+stepsize <- 10
+
+plt_prob <- tbl_plot_long %>% group_by(Step, Condition, History, ID) %>%
   summarize(loss_avg = mean(prob, na.rm = TRUE)) %>%
-  ggplot(aes(Step_bin, loss_avg, group = Condition)) +
+  filter(Step %% stepsize == 0) %>%
+  ggplot(aes(Step, loss_avg, group = Condition)) +
   # Add horizontal line with legend label
   geom_hline(
     data = chance_line,
@@ -45,13 +55,14 @@ plt_prob <- tbl_plot_long %>% group_by(Step_bin, Condition, History, ID) %>%
     axis.title = element_text(size = 18),
     legend.position = "none"
     ) +
-  labs(x = "Steps (binned)", y = "Probability (correct)")
+  labs(x = "Epoch", y = "Probability (correct)") +
+  coord_cartesian(ylim = c(.5, .75))
 
 chance_line_loss <- data.frame(y = .693, label = "Chance Performance")
 
-plt_loss <- tbl_plot_long %>% group_by(Step_bin, Condition, History, ID) %>%
-  summarize(loss_avg = mean(value, na.rm = TRUE)) %>%
-  ggplot(aes(Step_bin, loss_avg, group = Condition)) +
+plt_loss <- tbl_plot_long %>%
+  filter(Step %% stepsize == 0) %>%
+  ggplot(aes(Step, value, group = Condition)) +
   # Add horizontal line with legend label
   geom_hline(
     data = chance_line_loss,
@@ -69,7 +80,7 @@ plt_loss <- tbl_plot_long %>% group_by(Step_bin, Condition, History, ID) %>%
     text = element_text(size = 16),
     axis.title = element_text(size = 18)
   ) +
-  labs(x = "Steps (binned)", y = "Loss (Avg.)")
+  labs(x = "Epoch", y = "Loss (Avg.)") +
+  coord_cartesian(ylim = c(.3, .7))
 
 grid.draw(arrangeGrob(plt_prob, plt_loss, nrow = 1, widths = c(.4, .6)))
-

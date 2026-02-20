@@ -149,7 +149,7 @@ eval_preds <- function(x, sid) {
 
 ## predict on test data
 
-windsorize_predictions <- TRUE
+windsorize_predictions <- c(TRUE, FALSE)[1]
 
 if (windsorize_predictions) {
   l_tbl_itc_test <- l_tbl_itc_test[tbl_params_fitted_filtered$sid]
@@ -195,7 +195,7 @@ tbl_prop_correct_train %>%
   mutate(above_chance = prop_correct > .5) %>%
   summarize(better_than_chance = mean(above_chance))
 
-mean(tbl_prop_correct_train$prop_correct)
+holdout_pred_id <- mean(tbl_prop_correct_train$prop_correct)
 
 # 
 # # test for some trials (single run)
@@ -230,8 +230,13 @@ tbl_itc_test_avg <- tbl_itc_test
 tbl_itc_test_avg$pred_prob_right_picked <- preds_avg$p_r
 tbl_itc_test_avg$pred_right_picked <- preds_avg$sample_r
 
-sum(tbl_itc_test_avg$pred_right_picked == tbl_itc_test_avg$right_picked) / nrow(tbl_itc_test_avg)
+holdout_pred_avg <- sum(tbl_itc_test_avg$pred_right_picked == tbl_itc_test_avg$right_picked) / nrow(tbl_itc_test_avg)
 
+tbl_holdout_pred <- tibble(
+  model = c("Average", "ID"),
+  accuracy = c(holdout_pred_avg, holdout_pred_id),
+  windsorize = c(FALSE, windsorize_predictions)
+)
 
 # 2 params overall
 AIC_fixed <- 2 * nll_fixed + 2 * 2
