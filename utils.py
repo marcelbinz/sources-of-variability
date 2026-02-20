@@ -6,6 +6,8 @@ import torch
 from functools import reduce
 from itertools import chain
 
+from datasets import load_dataset
+
 
 def load_raw_data(filter):
     """
@@ -335,7 +337,7 @@ def split_and_format(my_df, condition, splittype, n_trial_split, col_pid, cols_x
     X_dev, y_dev = format_to_torch(
         my_df_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted
     )
-    df_out = {
+    dict_out = {
         "condition": condition,
         "df_train": my_df_train,
         "df_dev": my_df_dev,
@@ -344,7 +346,7 @@ def split_and_format(my_df, condition, splittype, n_trial_split, col_pid, cols_x
         "X_dev": X_dev,
         "y_dev": y_dev
     }
-    return df_out
+    return dict_out
 
 
 def shift_y(df):
@@ -370,7 +372,7 @@ def shift_y(df):
     df["right_picked_prev"] = df["right_picked_prev"].astype(int)
     return df
 
-def swap_two_cols(df, colnames, prop_swap=0.5):
+def swap_two_cols(df, colnames, rs, prop_swap=0.5):
     """
     Swap values between two columns for a random subset of rows within each participant group.
 
@@ -380,6 +382,8 @@ def swap_two_cols(df, colnames, prop_swap=0.5):
         Input dataframe containing the data.
     colnames : list or tuple of str
         Two column names whose values should be swapped.
+    rs : int
+        Random seed for reproducibility of the swapping process.
     prop_swap : float, optional (default=0.5)
         Proportion of rows (per participant group) in which the values 
         of the two columns will be swapped.
@@ -391,7 +395,7 @@ def swap_two_cols(df, colnames, prop_swap=0.5):
     """
     idxs_swap = (
         df.groupby("sid_unique")
-          .sample(frac=prop_swap, random_state=1)
+          .sample(frac=prop_swap, random_state=rs) # , random_state=1
           .index
     )
 
@@ -438,21 +442,128 @@ def scale_fixed(x, mn, sd):
     """ compute a scaled version of a variable by using predefined mean and sd """
     return (x - mn) / sd
 
-def zscore_pairs(df, l_swap_colnames):
+def zscore_grouped_cols(df, l_colnames_grouped_zscale, tf="z"):
     """
     compute a z score across pairs of columns by using the mean and sd of the combined values of the two columns
     
     :param df: dataframe containing the columns to be z-scored
-    :param l_swap_colnames: pairs of column names for which to compute z scores across the combined values of the two columns
+    :param l_colnames_grouped_zscale: pairs of column names for which to compute z scores across the combined values of the two columns
+    :param mean_center_only: mean-center only, i.e., do not divide by sd, default False
     :return: dataframe with z-scaled columns
     """
-    swap_colnames_flat = list(chain.from_iterable(l_swap_colnames))
-    stats = [df[vs].reset_index().melt(id_vars="index").value.agg(["mean", "std"]) for vs in l_swap_colnames]
+    swap_colnames_flat = list(chain.from_iterable(l_colnames_grouped_zscale))
+
+    if tf == "log_values":
+        for cn in ["right_val", "left_val"]:
+            df[cn] = np.log(df[cn])
+
+
+    stats = [df[vs].reset_index().melt(id_vars="index").value.agg(["mean", "std"]) for vs in l_colnames_grouped_zscale]
     d_stats = dict()
     for idx, cn in enumerate(swap_colnames_flat):
-        d_stats[cn] = stats[int(np.floor(idx / 2))]
+        d_stats[cn] = stats[int(np.floor(idx / len(l_colnames_grouped_zscale[0])))]
     for k, v in d_stats.items():
+        if tf == "mean_center_only":
+            v["std"] = 1
         df[k] = df[k].apply(scale_fixed, mn=v["mean"], sd=v["std"])
 
     return df
 
+
+def load_dataset(dataset_name):
+    """Load datasets based on the specified dataset name."""
+    match dataset_name:
+        case "risky":
+            df, dict_info = load_risky_dataset()
+        case "itc":
+            df, dict_info = load_itc_dataset()
+    return df, dict_info
+
+
+def load_risky_dataset():
+    """Load and preprocess the risky dataset from Peterson et al. (2021) Science."""
+
+    # minimal number of trials available per participant to be included in the data set
+    n_minimal = 80
+    n_trials_train = 60
+
+
+    ds = load_dataset("marcelbinz/peterson2021using", "exp1")
+    df_risky = ds['train'].to_pandas()
+
+    df_risky, df_counts, df_participants_use = participants_with_enough_trials(df_risky, n_minimal)
+    df_risky = participant_id_counter(df_risky, df_counts, df_participants_use, n_minimal)
+    df_risky = rename_cols(df_risky)
+
+    n_participants_total = df_risky["sid"].unique().shape[0]
+
+    col_pid = ["sid"]
+    cols_x = [
+        "probA1", "probA2", "probA3", "probA4", "probA5", "probA6", "probA7", "probA8", "probA9",
+        "probB1", "probB2", "probB3", "probB4", "probB5", "probB6", "probB7", "probB8", "probB9",
+        "outA1", "outA2", "outA3", "outA4", "outA5", "outA6", "outA7", "outA8", "outA9",
+        "outB1", "outB2", "outB3", "outB4", "outB5", "outB6", "outB7", "outB8", "outB9"
+    ]
+    col_y = ["choice"]
+    col_y_shifted = ["choice_prev"]
+    l_colnames_grouped_zscale = [[
+        "outA1", "outA2", "outA3", "outA4", "outA5", "outA6", "outA7", "outA8", "outA9",
+        "outB1", "outB2", "outB3", "outB4", "outB5", "outB6", "outB7", "outB8", "outB9"
+    ]]
+    in_dim = len(cols_x) + len(col_y_shifted)
+
+    dict_out = {
+        "n_participants_total":n_participants_total,
+        "n_trials_train":n_trials_train,
+        "col_pid":col_pid,
+        "cols_x":cols_x,
+        "col_y":col_y,
+        "col_y_shifted":col_y_shifted,
+        "l_colnames_grouped_zscale":l_colnames_grouped_zscale,
+        "in_dim":in_dim
+    }
+
+    return df_risky, dict_out
+
+
+def participants_with_enough_trials(df_risky, n_minimal):
+    df_counts_trials = df_risky.groupby("participant")["trial"].count().reset_index()
+    df_counts = df_counts_trials.groupby("trial").count().sort_values("trial", ascending=False)
+    df_counts["n_cum"] = df_counts["participant"].cumsum()
+
+    df_participants_use = df_counts_trials.query(f"trial >= {n_minimal}").copy()
+    df_risky = pd.merge(df_participants_use.loc[:,"participant"], df_risky, on="participant", how="inner")
+
+    return df_risky, df_counts, df_participants_use
+
+    
+def participant_id_counter(df_risky, df_counts, df_participants_use, n_minimal):
+    df_participants_use["sid"] = np.arange(1, 1 + df_counts.loc[n_minimal,"n_cum"], 1)
+    df_risky = pd.merge(df_risky, df_participants_use[["participant", "sid"]], on="participant").drop(columns=["participant"])
+    df_risky = df_risky[["sid"] + [c for c in df_risky.columns if c != "sid"]]
+
+    return df_risky
+
+def rename_cols(df_risky):
+    colnames_old = [
+        "probA1", "probA2", "probA3", "probA4", "probA5", "probA6", "probA7", "probA8", "probA9",
+        "probB1", "probB2", "probB3", "probB4", "probB5", "probB6", "probB7", "probB8", "probB9",
+        "outA1", "outA2", "outA3", "outA4", "outA5", "outA6", "outA7", "outA8", "outA9",
+        "outB1", "outB2", "outB3", "outB4", "outB5", "outB6", "outB7", "outB8", "outB9",
+        "trial", "choice"
+    ]
+    colnames_new = [
+        "left_1_prob", "left_2_prob", "left_3_prob", "left_4_prob", "left_5_prob", 
+        "left_6_prob", "left_7_prob", "left_8_prob", "left_9_prob",
+        "right_1_prob", "right_2_prob", "right_3_prob", "right_4_prob", "right_5_prob", 
+        "right_6_prob", "right_7_prob", "right_8_prob", "right_9_prob",
+        "left_1_val", "left_2_val", "left_3_val", "left_4_val", "left_5_val", 
+        "left_6_val", "left_7_val", "left_8_val", "left_9_val",
+        "right_1_val", "right_2_val", "right_3_val", "right_4_val", "right_5_val", 
+        "right_6_val", "right_7_val", "right_8_val", "right_9_val",
+        "trial_id", "right_picked"
+    ]
+    dict_map_cols = {old:colnames_new[idx] for idx, old in enumerate(colnames_old)}
+    df_risky.rename(columns=dict_map_cols, inplace=True)
+
+    return df_risky
