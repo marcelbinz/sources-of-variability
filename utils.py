@@ -84,7 +84,7 @@ def load_and_concat_raw_data(filter):
     return df_itc_all
 
 
-def unique_participant_ids(df):
+def unique_participant_ids_itc(df):
     """
     Generates unique participant identifiers based on the 'sid' column across specific months.
 
@@ -125,7 +125,7 @@ def unique_participant_ids(df):
     return df
 
 
-def make_conditions(df, n_trials, n_participants_total):
+def make_conditions(df):
     """
     Creates multiple versions of a dataset based on different trial and participant reshuffling conditions.
 
@@ -150,7 +150,7 @@ def make_conditions(df, n_trials, n_participants_total):
     # id no hist
     df_itc_id_nohist = id_nohist(df)
     df_itc_shared_hist = shared_hist(df)
-    df_itc_shared_nohist = shared_nohist(df, n_trials, n_participants_total)
+    df_itc_shared_nohist = shared_nohist(df)
     return df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist
 
 
@@ -195,14 +195,12 @@ def shared_hist(df):
     return df_new
 
 
-def shared_nohist(df, n_trials, n_participants_total):
+def shared_nohist(df):
     """
     Fully randomizes both trial and participant IDs, creating a new structure where all combinations are reshuffled.
 
     Parameters:
         df (pd.DataFrame): Input DataFrame with 'trial_id' and 'sid_unique'.
-        n_trials (int): Number of trials per participant.
-        n_participants_total (int): Total number of unique participants.
 
     Returns:
         pd.DataFrame: Completely randomized DataFrame with reassigned 'trial_id' and 'sid_unique'.
@@ -212,9 +210,8 @@ def shared_nohist(df, n_trials, n_participants_total):
     df_new["trial_id_old"] = df_new["trial_id"].copy()
     df_new["sid_unique_old"] = df_new["sid_unique"].copy()
     df_new = df_new.sample(frac=1).reset_index(drop=True)
-    df_new["trial_id"] = np.tile(range(1, n_trials+1), n_participants_total)
-    df_new["sid_unique"] = np.tile(
-        range(1, n_participants_total + 1), n_trials)
+    df_new["sid_unique"] = df_new["sid_unique"].sample(frac=1).reset_index(drop=True)
+    df_new["trial_id"] = df_new.groupby("sid_unique").cumcount() + 1
     df_new.sort_values(["sid_unique", "trial_id"], inplace=True)
     return df_new
 
@@ -254,9 +251,13 @@ def format_to_torch(df, col_pid, cols_x, col_y, col_y_shifted):
     grouped_x = df_x.groupby(
         col_pid)[cols_x + col_y_shifted].apply(lambda x: x.to_numpy())
     grouped_y = df_y.groupby(col_pid)[col_y].apply(lambda x: x.to_numpy())
-    X_3d = torch.from_numpy(np.stack(grouped_x.to_numpy()))
-    y_3d = torch.from_numpy(np.stack(grouped_y.to_numpy()))
-    return X_3d, y_3d
+    seqs_x = [torch.tensor(arr) for arr in grouped_x]
+    seqs_y = [torch.tensor(arr) for arr in grouped_y]
+    X_3d = torch.nn.utils.rnn.pad_sequence(seqs_x, batch_first=True)
+    y_3d = torch.nn.utils.rnn.pad_sequence(seqs_y, batch_first=True)
+    lengths = torch.tensor([len(s) for s in seqs_x])
+    mask = torch.arange(X_3d.size(1))[None, :] < lengths[:, None]
+    return X_3d, y_3d, mask
 
 
 def train_dev_split(df, splittype, n_trial_split=None):
@@ -331,10 +332,10 @@ def split_and_format(my_df, condition, splittype, n_trial_split, col_pid, cols_x
     my_df_train, my_df_dev = train_dev_split(
         my_df, splittype, n_trial_split=n_trial_split
     )
-    X_train, y_train = format_to_torch(
+    X_train, y_train, mask_train = format_to_torch(
         my_df_train, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted
     )
-    X_dev, y_dev = format_to_torch(
+    X_dev, y_dev, mask_dev = format_to_torch(
         my_df_dev, col_pid, cols_x, col_y, col_y_shifted=col_y_shifted
     )
     dict_out = {
@@ -344,7 +345,9 @@ def split_and_format(my_df, condition, splittype, n_trial_split, col_pid, cols_x
         "X_train": X_train,
         "y_train": y_train,
         "X_dev": X_dev,
-        "y_dev": y_dev
+        "y_dev": y_dev,
+        "mask_train": mask_train,
+        "mask_dev": mask_dev,
     }
     return dict_out
 
@@ -444,23 +447,27 @@ def scale_fixed(x, mn, sd):
 
 def zscore_grouped_cols(df, l_colnames_grouped_zscale, tf="z"):
     """
-    compute a z score across pairs of columns by using the mean and sd of the combined values of the two columns
+    compute a z score across several columns by using the mean and sd of the combined values of all columns
     
     :param df: dataframe containing the columns to be z-scored
     :param l_colnames_grouped_zscale: pairs of column names for which to compute z scores across the combined values of the two columns
     :param mean_center_only: mean-center only, i.e., do not divide by sd, default False
     :return: dataframe with z-scaled columns
     """
-    swap_colnames_flat = list(chain.from_iterable(l_colnames_grouped_zscale))
+    scale_colnames_flat = list(chain.from_iterable(l_colnames_grouped_zscale))
 
+    # apply log transformation to value columns if specified
+    # for risky data set, add absolute value of the minimum value plus a small constant to avoid log(0) and log of negative values
     if tf == "log_values":
-        for cn in ["right_val", "left_val"]:
-            df[cn] = np.log(df[cn])
-
+        min_val = df[[c for c in df.columns if c.endswith("_val")]].melt()["value"].min()
+        add_val = np.abs(min_val) + 0.000001
+        for cn in df.columns:
+            if cn.endswith("_val"):
+                df[cn] = np.log(df[cn] + add_val)  # add abs(min val) and small constant to avoid log(0)
 
     stats = [df[vs].reset_index().melt(id_vars="index").value.agg(["mean", "std"]) for vs in l_colnames_grouped_zscale]
     d_stats = dict()
-    for idx, cn in enumerate(swap_colnames_flat):
+    for idx, cn in enumerate(scale_colnames_flat):
         d_stats[cn] = stats[int(np.floor(idx / len(l_colnames_grouped_zscale[0])))]
     for k, v in d_stats.items():
         if tf == "mean_center_only":
@@ -470,7 +477,7 @@ def zscore_grouped_cols(df, l_colnames_grouped_zscale, tf="z"):
     return df
 
 
-def load_dataset(dataset_name):
+def load_sov_dataset(dataset_name):
     """Load datasets based on the specified dataset name."""
     match dataset_name:
         case "risky":
@@ -480,36 +487,39 @@ def load_dataset(dataset_name):
     return df, dict_info
 
 
-def load_risky_dataset():
-    """Load and preprocess the risky dataset from Peterson et al. (2021) Science."""
 
-    # minimal number of trials available per participant to be included in the data set
-    n_minimal = 80
-    n_trials_train = 60
+def load_itc_dataset(load_from_osf=False):
+    """
+    Load and preprocess the ITC dataset from Agrawal et al. (2023) JEP:G containing four different months of 2020.
 
+    :param load_from_osf: If True, loads raw data from OSF, otherwise, loads data from disk.
+    
+    """
 
-    ds = load_dataset("marcelbinz/peterson2021using", "exp1")
-    df_risky = ds['train'].to_pandas()
+    # load all four dataframes and concat into one df
+    # each data frame from a different 2020 month (i.e., march, april, june, november)
+    if load_from_osf:
+        # select which months to load
+        # slice(0,4,1) selects all months
+        filter = slice(0, 4, 1)
+        df_itc_all = load_and_concat_raw_data(filter)
+        df_itc_all.drop("Unnamed: 0", axis=1, inplace=True)
+        df_itc_all.to_csv("data/full-data.csv")
+    else:
+        df_itc_all = pd.read_csv("data/full-data.csv")
+    # make participant ids unique (i.e., they were re-used across sessions, but likely not from the same participant)
+    df_itc_all = unique_participant_ids_itc(df_itc_all)
 
-    df_risky, df_counts, df_participants_use = participants_with_enough_trials(df_risky, n_minimal)
-    df_risky = participant_id_counter(df_risky, df_counts, df_participants_use, n_minimal)
-    df_risky = rename_cols(df_risky)
+    col_pid = ["sid_unique"]
+    cols_x = ["right_time", "right_val", "left_time", "left_val"]
+    col_y = ["right_picked"]
+    col_y_shifted = ["right_picked_prev"]
 
-    n_participants_total = df_risky["sid"].unique().shape[0]
+    colnames_zscale = [["right_time", "left_time"], ["right_val", "left_val"]]
 
-    col_pid = ["sid"]
-    cols_x = [
-        "probA1", "probA2", "probA3", "probA4", "probA5", "probA6", "probA7", "probA8", "probA9",
-        "probB1", "probB2", "probB3", "probB4", "probB5", "probB6", "probB7", "probB8", "probB9",
-        "outA1", "outA2", "outA3", "outA4", "outA5", "outA6", "outA7", "outA8", "outA9",
-        "outB1", "outB2", "outB3", "outB4", "outB5", "outB6", "outB7", "outB8", "outB9"
-    ]
-    col_y = ["choice"]
-    col_y_shifted = ["choice_prev"]
-    l_colnames_grouped_zscale = [[
-        "outA1", "outA2", "outA3", "outA4", "outA5", "outA6", "outA7", "outA8", "outA9",
-        "outB1", "outB2", "outB3", "outB4", "outB5", "outB6", "outB7", "outB8", "outB9"
-    ]]
+    n_participants_total = df_itc_all["sid_unique"].nunique()
+    n_trials_train = 130
+
     in_dim = len(cols_x) + len(col_y_shifted)
 
     dict_out = {
@@ -519,7 +529,39 @@ def load_risky_dataset():
         "cols_x":cols_x,
         "col_y":col_y,
         "col_y_shifted":col_y_shifted,
-        "l_colnames_grouped_zscale":l_colnames_grouped_zscale,
+        "l_colnames_grouped_zscale":colnames_zscale,
+        "in_dim":in_dim
+    }
+
+    return df_itc_all, dict_out
+
+
+def load_risky_dataset():
+    """Load and preprocess the risky dataset from Peterson et al. (2021) Science."""
+
+    # minimal number of trials available per participant to be included in the data set
+    n_minimal = 80
+    n_trials_train = 60
+    
+    ds = load_dataset("marcelbinz/peterson2021using", "exp1")
+    df_risky = ds['train'].to_pandas()
+
+    df_risky, df_counts, df_participants_use = participants_with_enough_trials(df_risky, n_minimal)
+    df_risky = participant_id_counter(df_risky, df_counts, df_participants_use, n_minimal)
+    df_risky, dict_colnames = rename_risky_cols(df_risky)
+
+    n_participants_total = df_risky["sid"].unique().shape[0]
+
+    in_dim = len(dict_colnames["cols_x"]) + len(dict_colnames["col_y_shifted"])
+
+    dict_out = {
+        "n_participants_total":n_participants_total,
+        "n_trials_train":n_trials_train,
+        "col_pid":dict_colnames["col_pid"],
+        "cols_x":dict_colnames["cols_x"],
+        "col_y":dict_colnames["col_y"],
+        "col_y_shifted":dict_colnames["col_y_shifted"],
+        "l_colnames_grouped_zscale":dict_colnames["l_colnames_grouped_zscale"],
         "in_dim":in_dim
     }
 
@@ -542,9 +584,13 @@ def participant_id_counter(df_risky, df_counts, df_participants_use, n_minimal):
     df_risky = pd.merge(df_risky, df_participants_use[["participant", "sid"]], on="participant").drop(columns=["participant"])
     df_risky = df_risky[["sid"] + [c for c in df_risky.columns if c != "sid"]]
 
+    # in the risky dataset, sid and sid_unique are the same, but we create a sid_unique column for consistency with the ITC dataset and to allow for potential future modifications where they might differ
+    df_risky["sid_unique"] = df_risky["sid"].copy()
+
     return df_risky
 
-def rename_cols(df_risky):
+def rename_risky_cols(df_risky):
+    # original column names in the dataset, and new column names that are more descriptive and consistent with the ITC dataset
     colnames_old = [
         "probA1", "probA2", "probA3", "probA4", "probA5", "probA6", "probA7", "probA8", "probA9",
         "probB1", "probB2", "probB3", "probB4", "probB5", "probB6", "probB7", "probB8", "probB9",
@@ -563,7 +609,22 @@ def rename_cols(df_risky):
         "right_6_val", "right_7_val", "right_8_val", "right_9_val",
         "trial_id", "right_picked"
     ]
+    colnames_zscale = [[c for c in colnames_new if "val" in c]]
+    cols_x = [c for c in colnames_new if "prob" in c or "val" in c]
+    col_y = ["right_picked"]
+    col_y_shifted = ["right_picked_prev"]
+    col_pid = ["sid"]
+
+    dict_colnames = {
+        "l_colnames_grouped_zscale": colnames_zscale,
+        "cols_x": cols_x,
+        "col_y": col_y,
+        "col_y_shifted": col_y_shifted,
+        "col_pid": col_pid
+    }
+
+
     dict_map_cols = {old:colnames_new[idx] for idx, old in enumerate(colnames_old)}
     df_risky.rename(columns=dict_map_cols, inplace=True)
 
-    return df_risky
+    return df_risky, dict_colnames

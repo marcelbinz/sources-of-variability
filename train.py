@@ -31,6 +31,12 @@ def parseargs():
         parser.add_argument(*args, **kwargs)
 
     aa(
+        "--dataset_name",
+        type=str,
+        choices=["itc", "risky"],
+        help="'itc' for Agrawal et al. (2023) JEP:G, 'risky' for Peterson et al. (2021) Science",
+    )
+    aa(
         "--condition_name",
         type=str,
         default="original",
@@ -47,6 +53,15 @@ def parseargs():
         type=str,
         help="Quoted list of single column names to shuffle within participants.",
     )
+    aa(
+        "--tf",
+        type=str,
+        default="z",
+        choices=["z", "mean_center_only", "log_values"],
+        help="" \
+        "Type of transformation to apply to the data. 'z' for z-scoring, 'mean_center_only' for mean-centering only, " \
+        "'log_values' for log-transforming followed by z-scoring." \
+        "Note that log scaling only necessary for itc dataset, not for risky dataset.",)
     aa(
         "--rnd_seed",
         type=int,
@@ -116,7 +131,8 @@ def init_logger(log_file='train-itc.log', level=logging.INFO):
 
 
 def run(
-        condition_name, swap_colnames, shuffle_single_colnames,
+        dataset_name, condition_name, 
+        swap_colnames, shuffle_single_colnames, tf,
         d_model=64, d_ff=256, is_testcase="True", 
         rnd_seed=1, num_layers=4, masktype="causal", windowsize=5
         ):
@@ -124,10 +140,11 @@ def run(
     # ===================== Setup =====================
     # Example usage
     logger = init_logger(
-        f"""logs/train-itc-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log""")
+        f"""logs/train-{dataset_name}-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log""")
     logger.info("Logger initialized and ready to roll.")
 
     condition_names = ["original", "id_nohist", "shared_hist", "shared_nohist"]
+    # can be handed over as argument when different data sets are used, but for now, just hardcoded for the itc data set
     condition_id = condition_names.index(condition_name)
 
     l_swap_colnames = ast.literal_eval(swap_colnames)
@@ -138,85 +155,59 @@ def run(
 
     # when applied to different tasks as well, likely needs to be adapted to be more generalizable
     swap_varnames = [sc[0].split("_")[-1] for sc in l_swap_colnames if len(sc) > 0]
+    swap_varnames = list(set(swap_varnames))  # unique variable names that are swapped
     l_shuffle_varnames = ["_".join(ssc.split("_")[1:]) for ssc in l_shuffle_single_colnames]
     shuffle_variables = swap_varnames + l_shuffle_varnames
 
-    load_from_osf = False  # when local file is available
 
     # Create Model Dirs
     more_shuffle = "-".join(shuffle_variables)
     if more_shuffle == "":
         more_shuffle = "nothing"
-    save_dir = f"models/condition_{condition_name}/more_shuffle_{more_shuffle}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
+    save_dir = f"models/dataset_{dataset_name}/condition_{condition_name}/more_shuffle_{more_shuffle}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
     os.makedirs(save_dir, exist_ok=True)
 
     # ===================== Load Data =====================
 
-    # load all four dataframes and concat into one df
-    # each data frame from a different 2020 month (i.e., march, april, june, november)
-    if load_from_osf:
-        # select which months to load
-        # slice(0,4,1) selects all months
-        filter = slice(0, 4, 1)
-        df_itc_all = ut.load_and_concat_raw_data(filter)
-        df_itc_all.drop("Unnamed: 0", axis=1, inplace=True)
-        df_itc_all.to_csv("data/full-data.csv")
-    else:
-        df_itc_all = pd.read_csv("data/full-data.csv")
-    # make participant ids unique (i.e., they were re-used across sessions, but likely not from the same participant)
-    df_itc_all = ut.unique_participant_ids(df_itc_all)
-
-    n_participants_total = df_itc_all["sid_unique"].nunique()
-
-    # note. all participants provided exactly 195 trials
-    n_trials = 195
-    n_trials_train = 130
+    df, dict_info = ut.load_sov_dataset(dataset_name)
 
     # ===================== Prepare Data =====================
 
-    col_pid = ["sid_unique"]
-    cols_x = ["right_time", "right_val", "left_time", "left_val"]
-    col_y = ["right_picked"]
-    col_y_shifted = ["right_picked_prev"]
+    # zscale individual xs
+    #df[dict_info["cols_x"]] = df[dict_info["cols_x"]].apply(zscore)
 
-    # zscale X
-    # df_itc_all[cols_x] = df_itc_all[cols_x].apply(zscore)
-
-    # compute z scores across pairs of columns
-    df_itc_all = ut.zscore_pairs(df_itc_all, l_swap_colnames)
-
-    # shuffle trial ids and participant ids to create dfs with theoretical upper bounds on learning
-    df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = ut.make_conditions(
-        df_itc_all, n_trials, n_participants_total)
-
+    # compute z scores across groups of columns
+    df = ut.zscore_grouped_cols(df, dict_info["l_colnames_grouped_zscale"], tf=tf)
+    # create four conditions
+    df_original, df_id_nohist, df_shared_hist, df_shared_nohist = ut.make_conditions(df)
     # shift y by one trial such that on trial t, model gets info about y from trial t-1
-    l_dfs = list(map(ut.shift_y, [df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist]))
+    # ordering of dfs in l_dfs remains the same (original, id_nohist, shared_hist, shared_nohist)
+    l_dfs = list(map(ut.shift_y, [df_original, df_id_nohist, df_shared_hist, df_shared_nohist]))
 
     # shuffle more variables if specified
     if len(l_swap_colnames[0]) > 0:
-        for colnames in l_swap_colnames:
-            f_partial_swap = partial(ut.swap_two_cols, colnames=colnames)
+        for idx, colnames in enumerate(l_swap_colnames):
+            f_partial_swap = partial(ut.swap_two_cols, colnames=colnames, rs=idx)
             l_dfs = list(map(f_partial_swap, l_dfs))
     if (len(l_shuffle_single_colnames) > 0):
         for colname in l_shuffle_single_colnames:
             f_partial_shuffle = partial(ut.shuffle_single_column, colname=colname)
             l_dfs = list(map(f_partial_shuffle, l_dfs))
 
-
-
-    #df_itc_original, df_itc_id_nohist, df_itc_shared_hist, df_itc_shared_nohist = l_dfs[0], l_dfs[1], l_dfs[2], l_dfs[3]
-
     # train dev split and convert to 3d torch arrays that can be used by model
 
     partial_split_and_format = partial(
-        ut.split_and_format, splittype="first_vs_second_half", n_trial_split=n_trials_train,
-        col_pid=col_pid, cols_x=cols_x, col_y=col_y, col_y_shifted=col_y_shifted
+        ut.split_and_format, splittype="first_vs_second_half", n_trial_split=dict_info["n_trials_train"],
+        col_pid=dict_info["col_pid"], cols_x=dict_info["cols_x"], 
+        col_y=dict_info["col_y"], col_y_shifted=dict_info["col_y_shifted"]
     )
+
+                       
 
     l_df_train_dev = list(map(partial_split_and_format, l_dfs, condition_names))
 
     batch_size = 32
-    num_epochs = 150
+    num_epochs = 250#150
     lr = 3e-4
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -227,26 +218,27 @@ def run(
     if is_testcase == "True":
         n_participants_subset = 10
     else:
-        n_participants_subset = n_participants_total
+        n_participants_subset = dict_info["n_participants_total"]
 
     run = wandb.init(
         entity="mirkothalmann-helmholtz-munich",
         project="source-of-variablity",
-        name=f"condition={condition_name}_moreshuffle={more_shuffle}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={n_trials_train}_masktype={masktype}_windowsize={windowsize}",
+        name=f"dataset={dataset_name}_condition={condition_name}_moreshuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info['n_trials_train']}_masktype={masktype}_windowsize={windowsize}",
         config={
             "subset_participants": n_participants_subset,
             "learning_rate": lr,
             "architecture": "CausalTF with learned Pos. Encoding",
-            "dataset": "Agrawal et al. (2023) JEP:G",
+            "dataset": dataset_name,
             "condition": condition_name,
             "more_shuffle": more_shuffle,
+            "tf": tf,
             "epochs": num_epochs,
             "d_model": d_model,
             "d_ff": d_ff,
             "num_layers": num_layers,
             "rnd_seed": rnd_seed,
             "is_testcase": is_testcase,
-            "n_trials_train": n_trials_train,
+            "n_trials_train": dict_info["n_trials_train"],
             "masktype": masktype,
             "windowsize": windowsize,
         }
@@ -255,20 +247,24 @@ def run(
     # select the data from the relevant condition
     y_train = l_df_train_dev[condition_id]["y_train"][0:n_participants_subset, :, :]
     X_train = l_df_train_dev[condition_id]["X_train"][0:n_participants_subset, :, :]
+    mask_train = l_df_train_dev[condition_id]["mask_train"][0:n_participants_subset, :]
     y_dev = l_df_train_dev[condition_id]["y_dev"][0:n_participants_subset, :, :]
     X_dev = l_df_train_dev[condition_id]["X_dev"][0:n_participants_subset, :, :]
+    mask_dev = l_df_train_dev[condition_id]["mask_dev"][0:n_participants_subset, :]
 
     # create torch data loader
-    dataset_train = TensorDataset(X_train, y_train)
+    dataset_train = TensorDataset(X_train, y_train, mask_train)
     dataloader_train = DataLoader(
         dataset_train, batch_size=batch_size, shuffle=True)
 
-    dataset_dev = TensorDataset(X_dev, y_dev)
+    dataset_dev = TensorDataset(X_dev, y_dev, mask_dev)
     dataloader_dev = DataLoader(
         dataset_dev, batch_size=batch_size, shuffle=True)
 
     model = mod.CausalEncoder(d_model=d_model, ff=d_ff,
-                              num_layers=num_layers, masktype=masktype,
+                              num_layers=num_layers,
+                              in_dim=dict_info["in_dim"],
+                              masktype=masktype,
                               windowsize=windowsize).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.BCEWithLogitsLoss()
@@ -279,13 +275,14 @@ def run(
     for epoch in tqdm(range(num_epochs)):
         train_loss_total = 0
         dev_loss_total = 0
-        for batch_x, batch_y in dataloader_train:
+        for batch_x, batch_y, batch_mask in dataloader_train:
             batch_x = batch_x.to(device).float()
             batch_y = batch_y.to(device).float()
+            batch_mask = batch_mask.to(device).bool()
 
             outputs = model(batch_x)
             # loss
-            loss = criterion(outputs, batch_y)
+            loss = criterion(outputs[batch_mask], batch_y[batch_mask])
             train_loss_total += loss.item()
             # accuracy
             pred_right = (outputs > 0).int()
@@ -297,13 +294,14 @@ def run(
             loss.backward()
             optimizer.step()
 
-        for batch_x, batch_y in dataloader_dev:
+        for batch_x, batch_y, batch_mask in dataloader_dev:
             batch_x = batch_x.to(device).float()
             batch_y = batch_y.to(device).float()
+            batch_mask = batch_mask.to(device).bool()
             logger.info(f"""batch_y.shape = {batch_y.shape}""")
             outputs = model(batch_x)
             logger.info(f"""outputs.shape = {outputs.shape}""")
-            loss_dev = criterion(outputs, batch_y)
+            loss_dev = criterion(outputs[batch_mask], batch_y[batch_mask])
             dev_loss_total += loss_dev.item()
             # accuracy
             pred_right = (outputs > 0).int()
@@ -331,9 +329,11 @@ if __name__ == "__main__":
     torch.manual_seed(args.rnd_seed)
 
     run(
+        dataset_name=args.dataset_name,
         condition_name=args.condition_name,
         swap_colnames=args.swap_colnames,
         shuffle_single_colnames=args.shuffle_single_colnames,
+        tf=args.tf,
         d_model=args.d_model,
         d_ff=args.d_ff,
         is_testcase=args.is_testcase,
