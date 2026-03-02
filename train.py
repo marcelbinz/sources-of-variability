@@ -275,6 +275,10 @@ def run(
     for epoch in tqdm(range(num_epochs)):
         train_loss_total = 0
         dev_loss_total = 0
+        n_correct_total_train = 0
+        n_correct_total_dev = 0
+        n_total_train = 0
+        n_total_dev = 0
         for batch_x, batch_y, batch_mask in dataloader_train:
             batch_x = batch_x.to(device).float()
             batch_y = batch_y.to(device).float()
@@ -285,29 +289,37 @@ def run(
             loss = criterion(outputs[batch_mask], batch_y[batch_mask])
             train_loss_total += loss.item()
             # accuracy
-            pred_right = (outputs > 0).int()
-            correct = (pred_right == batch_y.int()).sum().item()
-            train_acc = correct / \
-                (batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
+            n_problems = batch_mask.int().sum().item()
+            pred_right = (outputs[batch_mask] > 0).int()
+            correct = (pred_right == batch_y[batch_mask].int()).sum().item()
+            # update total correct and total problems for train accuracy
+            n_correct_total_train += correct
+            n_total_train += n_problems
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
+        train_acc = n_correct_total_train / n_total_train
+                #(batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
+
         for batch_x, batch_y, batch_mask in dataloader_dev:
             batch_x = batch_x.to(device).float()
             batch_y = batch_y.to(device).float()
             batch_mask = batch_mask.to(device).bool()
-            logger.info(f"""batch_y.shape = {batch_y.shape}""")
             outputs = model(batch_x)
-            logger.info(f"""outputs.shape = {outputs.shape}""")
             loss_dev = criterion(outputs[batch_mask], batch_y[batch_mask])
             dev_loss_total += loss_dev.item()
             # accuracy
-            pred_right = (outputs > 0).int()
-            correct = (pred_right == batch_y.int()).sum().item()
-            dev_acc = correct / \
-                (batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
+            n_problems = batch_mask.int().sum().item()
+            pred_right = (outputs[batch_mask] > 0).int()
+            correct = (pred_right == batch_y[batch_mask].int()).sum().item()
+            # update total correct and total problems for dev accuracy
+            n_correct_total_dev += correct
+            n_total_dev += n_problems
+            
+        dev_acc = n_correct_total_dev / n_total_dev
+                #(batch_y.shape[0] * batch_y.shape[1] * batch_y.shape[2])
 
         wandb.log({
             "epoch": epoch,

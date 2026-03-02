@@ -609,6 +609,20 @@ def rename_risky_cols(df_risky):
         "right_6_val", "right_7_val", "right_8_val", "right_9_val",
         "trial_id", "right_picked"
     ]
+
+    dict_map_cols = {old:colnames_new[idx] for idx, old in enumerate(colnames_old)}
+    df_risky.rename(columns=dict_map_cols, inplace=True)
+
+    # # filter df for problems with max two vals per side
+    # df_risky = df_risky.query("left_1_prob + left_2_prob == 1 and right_1_prob + right_2_prob == 1")
+    # colnames_new = [
+    #     "left_1_prob", "left_2_prob",
+    #     "right_1_prob", "right_2_prob",
+    #     "left_1_val", "left_2_val",
+    #     "right_1_val", "right_2_val", 
+    #     "trial_id", "right_picked"
+    # ]
+
     colnames_zscale = [[c for c in colnames_new if "val" in c]]
     cols_x = [c for c in colnames_new if "prob" in c or "val" in c]
     col_y = ["right_picked"]
@@ -622,9 +636,5 @@ def rename_risky_cols(df_risky):
         "col_y_shifted": col_y_shifted,
         "col_pid": col_pid
     }
-
-
-    dict_map_cols = {old:colnames_new[idx] for idx, old in enumerate(colnames_old)}
-    df_risky.rename(columns=dict_map_cols, inplace=True)
 
     return df_risky, dict_colnames
