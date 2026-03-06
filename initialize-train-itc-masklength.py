@@ -11,11 +11,13 @@ import os
 base_dict = {
     "rnd_seed": 1,
     "python_file": "train.py",
-    "dataset_name": "risky", # or "itc"
-    "dataset_select": "repetitions",
+    "dataset_name": "itc", # or "risky"
+    "dataset_select": "repetitions", # is ignored for itc data"
+    "tf":"log_values"
+
 }
 
-l_condition_names = ["original" , "shared_nohist"] # [,, "shared_hist", "id_nohist"]
+l_condition_names = ["original"] # [,, "shared_nohist", "shared_hist", "id_nohist"]
 
 
 # swap_colnames and shuffle_single_colnames are only needed when variables within a condition are shuffled
@@ -29,46 +31,14 @@ swap_colnames_2 = ['[[]]'] # ,'[[\"right_val\", \"left_val\"]]', '[[\"right_time
 shuffle_single_colnames_2 = ['[]']
 
 
-# for risky data:
-# bit ugly for risky data, because many columns to be swapped for one variable (e.g., value)
-# swap_colnames = [
-#     '[[\"right_1_val\", \"left_1_val\"], [\"right_2_val\", \"left_2_val\"],  \
-#     [\"right_3_val\", \"left_3_val\"], [\"right_4_val\", \"left_4_val\"], [\"right_5_val\", \"left_5_val\"], \
-#     [\"right_6_val\", \"left_6_val\"], [\"right_7_val\", \"left_7_val\"], \
-#     [\"right_8_val\", \"left_8_val\"], [\"right_9_val\", \"left_9_val\"], \
-#     [\"right_1_prob\", \"left_1_prob\"], [\"right_2_prob\", \"left_2_prob\"],  \
-#     [\"right_3_prob\", \"left_3_prob\"], [\"right_4_prob\", \"left_4_prob\"], \
-#     [\"right_5_prob\", \"left_5_prob\"], [\"right_6_prob\", \"left_6_prob\"], \
-#     [\"right_7_prob\", \"left_7_prob\"], [\"right_8_prob\", \"left_8_prob\"], \
-#     [\"right_9_prob\", \"left_9_prob\"]]'
-# ]
-# shuffle_single_colnames = ['[\"right_picked_prev\"]', '[]']
-
-# swap_colnames_2 = [
-#     '[[]]',
-
-#     '[[\"right_1_val\", \"left_1_val\"], [\"right_2_val\", \"left_2_val\"],  \
-#     [\"right_3_val\", \"left_3_val\"], [\"right_4_val\", \"left_4_val\"], [\"right_5_val\", \"left_5_val\"], \
-#     [\"right_6_val\", \"left_6_val\"], [\"right_7_val\", \"left_7_val\"], \
-#     [\"right_8_val\", \"left_8_val\"], [\"right_9_val\", \"left_9_val\"]]',
-
-#     '[[\"right_1_prob\", \"left_1_prob\"], [\"right_2_prob\", \"left_2_prob\"],  \
-#     [\"right_3_prob\", \"left_3_prob\"], [\"right_4_prob\", \"left_4_prob\"], \
-#     [\"right_5_prob\", \"left_5_prob\"], [\"right_6_prob\", \"left_6_prob\"], \
-#     [\"right_7_prob\", \"left_7_prob\"], [\"right_8_prob\", \"left_8_prob\"], \
-#     [\"right_9_prob\", \"left_9_prob\"]]'
-# ]
-# shuffle_single_colnames_2 = ['[]']
-
-
-
-
-l_d_model = [16]
-l_d_ff = [64]
+l_d_model = [32]
+l_d_ff = [256]
 l_is_testcase = ["False"]
 l_num_layers = [2]
-l_masktype = ["causal"] # "windowed_causal"
-l_windowsize = [2]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
+l_masktype = ["windowed_causal"] # "causal"
+l_windowsize = [1, 2, 3, 5, 10]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
+
+
 
 # second part can be dropped when only generated data sets (i.e., four conditions) are used
 # Generate all combinations
@@ -142,12 +112,6 @@ with ThreadPoolExecutor(max_workers=18) as executor:
 
 # best hyperparameters for itc data
 
-# l_d_model = [32]
-# l_d_ff = [256]
-# l_is_testcase = ["False"]
-# l_num_layers = [2]
-# l_masktype = ["causal"] # "windowed_causal"
-# l_windowsize = [2]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
 
 
 # best hyperparameters for risky no repetitions data
