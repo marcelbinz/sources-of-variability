@@ -37,6 +37,12 @@ def parseargs():
         help="'itc' for Agrawal et al. (2023) JEP:G, 'risky' for Peterson et al. (2021) Science",
     )
     aa(
+        "--dataset_select",
+        type=str,
+        choices=["", "repetitions", "no_repetitions"],
+        help="Only relevant for 'risky' dataset, whether problem repetitions should be included or not."
+    )
+    aa(
         "--condition_name",
         type=str,
         default="original",
@@ -131,18 +137,14 @@ def init_logger(log_file='train-itc.log', level=logging.INFO):
 
 
 def run(
-        dataset_name, condition_name, 
+        dataset_name, dataset_select, condition_name, 
         swap_colnames, shuffle_single_colnames, tf,
         d_model=64, d_ff=256, is_testcase="True", 
         rnd_seed=1, num_layers=4, masktype="causal", windowsize=5
         ):
 
     # ===================== Setup =====================
-    # Example usage
-    logger = init_logger(
-        f"""logs/train-{dataset_name}-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log""")
-    logger.info("Logger initialized and ready to roll.")
-
+    
     condition_names = ["original", "id_nohist", "shared_hist", "shared_nohist"]
     # can be handed over as argument when different data sets are used, but for now, just hardcoded for the itc data set
     condition_id = condition_names.index(condition_name)
@@ -150,26 +152,36 @@ def run(
     l_swap_colnames = ast.literal_eval(swap_colnames)
     l_shuffle_single_colnames = ast.literal_eval(shuffle_single_colnames)
 
-    logger.info(f"""l_swap_colnames = {l_swap_colnames}""")
-    logger.info(f"""l_shuffle_single_colnames = {l_shuffle_single_colnames}""")
-
     # when applied to different tasks as well, likely needs to be adapted to be more generalizable
     swap_varnames = [sc[0].split("_")[-1] for sc in l_swap_colnames if len(sc) > 0]
     swap_varnames = list(set(swap_varnames))  # unique variable names that are swapped
     l_shuffle_varnames = ["_".join(ssc.split("_")[1:]) for ssc in l_shuffle_single_colnames]
     shuffle_variables = swap_varnames + l_shuffle_varnames
 
-
     # Create Model Dirs
     more_shuffle = "-".join(shuffle_variables)
     if more_shuffle == "":
         more_shuffle = "nothing"
-    save_dir = f"models/dataset_{dataset_name}/condition_{condition_name}/more_shuffle_{more_shuffle}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
+    
+    if dataset_name == "risky":
+        logger = init_logger(
+            f"""logs/train-{dataset_name}_{dataset_select}/condition_{condition_name}/more_shuffle_{more_shuffle}-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log""")
+        save_dir = f"models/dataset_{dataset_name}/condition_{condition_name}/more_shuffle_{more_shuffle}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
+    elif dataset_name == "itc":
+        logger = init_logger(
+            f"""logs/train-{dataset_name}/condition_{condition_name}/more_shuffle_{more_shuffle}-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log""")
+        save_dir = f"models/dataset_{dataset_name}_{dataset_select}/condition_{condition_name}/more_shuffle_{more_shuffle}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
+        
     os.makedirs(save_dir, exist_ok=True)
+    logger.info("Logger initialized and ready to roll.")
+
+    logger.info(f"""l_swap_colnames = {l_swap_colnames}""")
+    logger.info(f"""l_shuffle_single_colnames = {l_shuffle_single_colnames}""")
+
 
     # ===================== Load Data =====================
 
-    df, dict_info = ut.load_sov_dataset(dataset_name)
+    df, dict_info = ut.load_sov_dataset(dataset_name, dataset_select)
 
     # ===================== Prepare Data =====================
 
@@ -220,15 +232,21 @@ def run(
     else:
         n_participants_subset = dict_info["n_participants_total"]
 
+    if dataset_name == "risky":
+        wandb_name = f"""dataset={dataset_name}_{dataset_select}_condition={condition_name}_more_shuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info['n_trials_train']}_masktype={masktype}_windowsize={windowsize}"""
+        dataset_desc = f"{dataset_name}_{dataset_select}"
+    elif dataset_name == "itc":
+        wandb_name = f"""dataset={dataset_name}_condition={condition_name}_more_shuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info['n_trials_train']}_masktype={masktype}_windowsize={windowsize}"""
+        dataset_desc = dataset_name
     run = wandb.init(
         entity="mirkothalmann-helmholtz-munich",
         project="source-of-variablity",
-        name=f"dataset={dataset_name}_condition={condition_name}_moreshuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info['n_trials_train']}_masktype={masktype}_windowsize={windowsize}",
+        name=wandb_name,
         config={
             "subset_participants": n_participants_subset,
             "learning_rate": lr,
             "architecture": "CausalTF with learned Pos. Encoding",
-            "dataset": dataset_name,
+            "dataset": dataset_desc,
             "condition": condition_name,
             "more_shuffle": more_shuffle,
             "tf": tf,
@@ -342,6 +360,7 @@ if __name__ == "__main__":
 
     run(
         dataset_name=args.dataset_name,
+        dataset_select=args.dataset_select,
         condition_name=args.condition_name,
         swap_colnames=args.swap_colnames,
         shuffle_single_colnames=args.shuffle_single_colnames,
