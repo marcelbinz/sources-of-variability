@@ -477,11 +477,12 @@ def zscore_grouped_cols(df, l_colnames_grouped_zscale, tf="z"):
     return df
 
 
-def load_sov_dataset(dataset_name):
+def load_sov_dataset(dataset_name, dataset_select):
     """Load datasets based on the specified dataset name."""
     match dataset_name:
         case "risky":
-            df, dict_info = load_risky_dataset()
+            # drop_ambiguous=True and drop_no_feedback=True represents the dataset used by Peterson et al. (2021)
+            df, dict_info = load_risky_dataset(drop_ambiguous=True, drop_no_feedback=True, drop_repetitions=dataset_select=="no_repetitions")
         case "itc":
             df, dict_info = load_itc_dataset()
     return df, dict_info
@@ -536,17 +537,28 @@ def load_itc_dataset(load_from_osf=False):
     return df_itc_all, dict_out
 
 
-def load_risky_dataset():
-    """Load and preprocess the risky dataset from Peterson et al. (2021) Science."""
+def load_risky_dataset(drop_ambiguous, drop_no_feedback, drop_repetitions):
+    """Load and preprocess the risky dataset from Peterson et al. (2021) Science.
+    
+    :param drop_ambiguous: If True, drops trials in which subjects did not observe all probabilities
+    :param drop_no_feedback: If True, drops trials in which subjects did not receive feedback about the outcome
+    :param drop_repetitions: If True, drops trials in which subjects were presented with the same problem more than once (i.e., repetitions of the same problem were included in the original dataset)
 
-    # minimal number of trials available per participant to be included in the data set
-    n_minimal = 80
-    n_trials_train = 60
+    """
     
     ds = load_dataset("marcelbinz/peterson2021using", "exp1")
     df_risky = ds['train'].to_pandas()
 
-    df_risky, df_counts, df_participants_use = participants_with_enough_trials(df_risky, n_minimal)
+    # minimal number of trials available per participant to be included in the data set
+    n_minimal = 50#60#
+    n_trials_train = 40#55#
+
+    # most problems were repetitions; when these are dropped, only few trials remain in the dataset
+    if drop_repetitions:
+        n_minimal = 12
+        n_trials_train = 10
+    
+    df_risky, df_counts, df_participants_use = participants_with_enough_trials(df_risky, n_minimal, drop_ambiguous=drop_ambiguous, drop_no_feedback=drop_no_feedback, drop_repetitions=drop_repetitions)
     df_risky = participant_id_counter(df_risky, df_counts, df_participants_use, n_minimal)
     df_risky, dict_colnames = rename_risky_cols(df_risky)
 
@@ -568,7 +580,17 @@ def load_risky_dataset():
     return df_risky, dict_out
 
 
-def participants_with_enough_trials(df_risky, n_minimal):
+def participants_with_enough_trials(df_risky, n_minimal, drop_ambiguous, drop_no_feedback, drop_repetitions):
+
+    df_risky["n_problem_observe"] = df_risky.groupby(["participant", "B", "A"]).cumcount() + 1
+
+    if drop_ambiguous:
+        df_risky = df_risky.query("not Amb")
+    if drop_no_feedback:
+        df_risky = df_risky.query("Feedback")
+    if drop_repetitions:
+        df_risky = df_risky.query("n_problem_observe == 1")
+
     df_counts_trials = df_risky.groupby("participant")["trial"].count().reset_index()
     df_counts = df_counts_trials.groupby("trial").count().sort_values("trial", ascending=False)
     df_counts["n_cum"] = df_counts["participant"].cumsum()
