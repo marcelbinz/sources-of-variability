@@ -7,8 +7,11 @@ import polars as pl
 import torch
 from functools import reduce
 from itertools import chain
+import logging
 
 from datasets import load_dataset
+
+logger = logging.getLogger(__name__)
 
 
 def load_raw_data(filter):
@@ -739,25 +742,26 @@ def load_mm_dataset(dataset_select="full"):
             },
             null_values=["(nan, nan, nan, nan)"],
             ignore_errors=False,
-            low_memory=True,
-            try_parse_dates=True,
             has_header=True,
-            infer_schema_length=10000,
-            # n_rows = 1000
+        ).filter(
+            pl.col("LeftHand").is_not_null(),
+            pl.col("Man").is_not_null(),
+            pl.col("UserID").is_not_null(),
         )
-        .filter(pl.col("LeftHand").is_not_null())
-        .with_columns(pl.col("Man").cast(pl.Int8))
+        # .with_columns(pl.col("Man").cast(pl.Int8))
     )
 
-    n_minimal = 10
-    n_maximal = 13
-    n_trials_train = 8  # at least 2, at max 5 to predict
+    n_minimal = 40  # 10  #
+    n_maximal = 60  # 13  #
+    n_trials_train = 38  # 8  #   # at least 2, at max 5 to predict
 
     df_scenario_pairs_small = participants_with_selected_number_of_trials(
         df, n_minimal, n_maximal, dataset_select
     )
+    logger.info("made subselection of participants with selected nr. of trials")
 
     df_scenario_pairs_small = add_and_remove_cols(df_scenario_pairs_small)
+    logger.info("added and removed columns")
 
     df_scenario_pairs_small = df_scenario_pairs_small.sort(["UserID", "trial_id"])
 
@@ -774,10 +778,11 @@ def load_mm_dataset(dataset_select="full"):
     )
 
     df_mm, dict_colnames = rename_mm_cols(df_scenario_pairs_small_wide)
+    logger.info("renamed columns")
 
     # n_participants_total = df_mm.select(pl.col("sid").unique()).shape[0]
     n_participants_total = (
-        df_mm.select(pl.col("sid_unique").n_unique()).collect().item()
+        df_mm.select(pl.col(dict_colnames["col_pid"]).n_unique()).collect().item()
     )
 
     in_dim = len(dict_colnames["cols_x"]) + len(dict_colnames["col_y_shifted"])
@@ -949,7 +954,15 @@ def rename_mm_cols(df):
         "right_cat",
     ]
 
-    cols_x = [c for c in colnames_new if c not in ["sid", "sid_unique"]]
+    cols_x = (
+        [c for c in colnames_new if c not in ["sid", "sid_unique"]]
+        + [
+            f"is_default_choice_{side}_{val}"
+            for side in ["left", "right"]
+            for val in [0, 1]
+        ]
+        + ["PedPed"]
+    )
     col_y = ["right_picked"]
     col_y_shifted = ["right_picked_prev"]
     col_pid = ["sid_unique"]
@@ -1017,10 +1030,10 @@ def add_and_remove_cols(df):
     """Add necessary columns (trial_id, right_picked, is_default_choice) and remove unnecessary columns from the dataset."""
     # add trial_id column
     df = (
-        df.sort("ExtendedSessionID", "ScenarioOrder").with_columns(
-            (np.floor(pl.arange(0, pl.len()).over(["UserID"]) / 2) + 1)
-            .cast(pl.Int8)
-            .alias("trial_id")
+        df.sort("ExtendedSessionID", "ScenarioOrder", "ResponseID").with_columns(
+            (np.floor(pl.arange(0, pl.len()).over(["UserID"]) / 2) + 1).alias(
+                "trial_id"
+            )
         )
     ).sort("UserID", "trial_id")
 
@@ -1086,11 +1099,11 @@ def participants_with_selected_number_of_trials(
         .filter(pl.col("n_scenarios_saved") == 2)
     )
 
-    # only pairs of rows
+    # only scenarios with pairs of rows
     df_scenario_pairs = df.join(df_response_agg, on="ResponseID")
 
     if dataset_select == "testing_size":
-        # is about 180k rows with 2 rows per trial_id
+        # is about 180k rows with 2 rows per trial_id (3k subjects)
         df_user_agg = (
             df_scenario_pairs.group_by("UserID")
             .len()
@@ -1099,7 +1112,7 @@ def participants_with_selected_number_of_trials(
             )
         )
     elif dataset_select == "full":
-        # is about 1.2 Mio rows with 2 rows per trial_id
+        # is about 30 Mio rows with 2 rows per trial_id (1.2 Mio subjects)
         df_user_agg = (
             df_scenario_pairs.group_by("UserID")
             .len()

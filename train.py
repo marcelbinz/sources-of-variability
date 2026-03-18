@@ -3,6 +3,7 @@ import argparse
 import random
 import numpy as np
 import pandas as pd
+from sklearn import logger
 import polars as pl
 import torch
 import wandb
@@ -35,14 +36,14 @@ def parseargs():
     aa(
         "--dataset_name",
         type=str,
-        choices=["itc", "risky"],
-        help="'itc' for Agrawal et al. (2023) JEP:G, 'risky' for Peterson et al. (2021) Science",
+        choices=["itc", "risky", "mm"],
+        help="'itc' for Agrawal et al. (2023) JEP:G, 'risky' for Peterson et al. (2021) Science, 'mm' for Moral Machine by Awad et al. (2018) Nature",
     )
     aa(
         "--dataset_select",
         type=str,
-        choices=["", "repetitions", "no_repetitions"],
-        help="Only relevant for 'risky' dataset, whether problem repetitions should be included or not.",
+        choices=["", "repetitions", "no_repetitions", "testing_size", "full"],
+        help="Only relevant for 'risky' (problem repetitions or not?) and 'mm' (full data or testset) datasets.",
     )
     aa(
         "--condition_name",
@@ -87,7 +88,7 @@ def parseargs():
         "--d_ff",
         type=int,
         default=256,
-        choices=[32, 64, 128, 256],
+        choices=[16, 32, 64, 128, 256],
     )
     aa(
         "--is_testcase",
@@ -177,7 +178,7 @@ def run(
     if more_shuffle == "":
         more_shuffle = "nothing"
 
-    if dataset_name == "risky":
+    if dataset_name in ["risky", "mm"]:
         logger = init_logger(
             f"""logs/train-{dataset_name}_{dataset_select}/condition_{condition_name}/more_shuffle_{more_shuffle}-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log"""
         )
@@ -197,6 +198,7 @@ def run(
     # ===================== Load Data =====================
 
     df, dict_info = ut.load_sov_dataset(dataset_name, dataset_select)
+    logger.info("loaded sov dataset")
 
     # ===================== Prepare Data =====================
 
@@ -211,6 +213,7 @@ def run(
     elif dataset_name == "mm":
         df = ut.zscore_single_col_lazy(df, dict_info["l_colnames_single_zscale"])
 
+    logger.info("applied transformations")
     #### CONDITIONS ####
 
     if dataset_name in ["itc", "risky"]:
@@ -221,9 +224,11 @@ def run(
         df_original, df_id_nohist, df_shared_hist, df_shared_nohist = (
             ut.make_conditions_lazy(df)
         )
+    l_dfs = [df_original, df_id_nohist, df_shared_hist, df_shared_nohist]
+    logger.info("created four conditions")
 
     batch_size = 32
-    num_epochs = 250  # 150
+    num_epochs = 25  # 150 250
     lr = 3e-4
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -236,7 +241,7 @@ def run(
     else:
         n_participants_subset = dict_info["n_participants_total"]
 
-    if dataset_name == "risky":
+    if dataset_name in ["risky", "mm"]:
         wandb_name = f"""dataset={dataset_name}_{dataset_select}_condition={condition_name}_more_shuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info["n_trials_train"]}_masktype={masktype}_windowsize={windowsize}"""
         dataset_desc = f"{dataset_name}_{dataset_select}"
     elif dataset_name == "itc":
@@ -276,22 +281,20 @@ def run(
 
         # shift y by one trial such that on trial t, model gets info about y from trial t-1
         # ordering of dfs in l_dfs remains the same (original, id_nohist, shared_hist, shared_nohist)
-        l_dfs = list(
-            map(
-                ut.shift_y,
-                [df_original, df_id_nohist, df_shared_hist, df_shared_nohist],
-            )
-        )
+        l_dfs = list(map(ut.shift_y, l_dfs))
+        logger.info("shifted y col")
 
         #### SHUFFLING INDEPENDENT VARIABLES ####
         if len(l_swap_colnames[0]) > 0:
             for idx, colnames in enumerate(l_swap_colnames):
                 f_partial_swap = partial(ut.swap_two_cols, colnames=colnames, rs=idx)
                 l_dfs = list(map(f_partial_swap, l_dfs))
+            logger.info("swapped pairs of columns")
         if len(l_shuffle_single_colnames) > 0:
             for colname in l_shuffle_single_colnames:
                 f_partial_shuffle = partial(ut.shuffle_single_column, colname=colname)
                 l_dfs = list(map(f_partial_shuffle, l_dfs))
+            logger.info("shuffled single col")
 
         #### SPLIT AND FORMAT ####
         partial_split_and_format = partial(
@@ -305,6 +308,7 @@ def run(
         )
 
         l_df_train_dev = list(map(partial_split_and_format, l_dfs, condition_names))
+        logger.info("split and formatted dfs")
 
         #### SELECT CONDITION AND CREATE DATALOADER ####
         # select the data from the relevant condition
@@ -316,6 +320,7 @@ def run(
         y_dev = l_df_train_dev[condition_id]["y_dev"][0:n_participants_subset, :, :]
         X_dev = l_df_train_dev[condition_id]["X_dev"][0:n_participants_subset, :, :]
         mask_dev = l_df_train_dev[condition_id]["mask_dev"][0:n_participants_subset, :]
+        logger.info("selected relevant condition")
 
         # create torch data loader
         dataset_train = TensorDataset(X_train, y_train, mask_train)
@@ -325,9 +330,11 @@ def run(
 
         dataset_dev = TensorDataset(X_dev, y_dev, mask_dev)
         dataloader_dev = DataLoader(dataset_dev, batch_size=batch_size, shuffle=True)
+        logger.info("created DataLoaders")
 
     elif dataset_name == "mm":
         df_use = ut.shift_y_lazy(l_dfs[condition_id])
+        logger.info("shifted y col")
 
         ## TODO: implement shuffling for mm dataset as well, currently only implemented for itc and risky datasets
 
@@ -337,8 +344,13 @@ def run(
             splittype="first_vs_second_half",
             n_trial_split=dict_info["n_trials_train"],
         )
+        logger.info("applied train-dev split")
         participants = (
-            df_train.select(pl.col(dict_info["col_pid"])).unique().to_numpy().flatten()
+            df_train.select(pl.col(dict_info["col_pid"]))
+            .unique()
+            .collect()
+            .to_numpy()
+            .flatten()
         )
         dataset_train = lzdt.PolarsLazyDataset(
             lazyframe=df_train,
@@ -347,10 +359,10 @@ def run(
             col_y=dict_info["col_y"],
             cols_x=dict_info["cols_x"],
             col_y_shifted=dict_info["col_y_shifted"],
-            participant_subsets=1000,
+            participant_subsets=500000,
         )
-        # note. batch size is ignored, because dataset returns already sequences from participants
-        dataloader_train = DataLoader(dataset_train)
+        # note. can directly iterate over dataset_train, already returns batches from participants
+        dataloader_train = dataset_train
 
         dataset_dev = lzdt.PolarsLazyDataset(
             lazyframe=df_dev,
@@ -359,10 +371,11 @@ def run(
             col_y=dict_info["col_y"],
             cols_x=dict_info["cols_x"],
             col_y_shifted=dict_info["col_y_shifted"],
-            participant_subsets=1000,
+            participant_subsets=500000,
         )
-        # note. batch size is ignored, because dataset returns already sequences from participants
-        dataloader_dev = DataLoader(dataset_dev)
+        # note. can directly iterate over dataset_train, already returns batches from participants
+        dataloader_dev = dataset_dev
+        logger.info("created dataloaders")
 
     model = mod.CausalEncoder(
         d_model=d_model,
@@ -390,7 +403,7 @@ def run(
             batch_y = batch_y.to(device).float()
             batch_mask = batch_mask.to(device).bool()
 
-            outputs = model(batch_x)
+            outputs = model(batch_x).squeeze(2)
             # loss
             loss = criterion(outputs[batch_mask], batch_y[batch_mask])
             train_loss_total += loss.item()
@@ -413,7 +426,7 @@ def run(
             batch_x = batch_x.to(device).float()
             batch_y = batch_y.to(device).float()
             batch_mask = batch_mask.to(device).bool()
-            outputs = model(batch_x)
+            outputs = model(batch_x).squeeze(2)
             loss_dev = criterion(outputs[batch_mask], batch_y[batch_mask])
             dev_loss_total += loss_dev.item()
             # accuracy

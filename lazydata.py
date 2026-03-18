@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import IterableDataset
 import polars as pl
 import numpy as np
+from tqdm import tqdm
 
 
 class PolarsLazyDataset(IterableDataset):
@@ -30,38 +31,44 @@ class PolarsLazyDataset(IterableDataset):
     def __iter__(self):
 
         full_chunks = np.repeat(self.participant_subsets, (self.n_chunks - 1))
-        last_chunk = np.array(max(self.participants) % self.participant_subsets)[
+        last_chunk = np.array(len(self.participants) % self.participant_subsets)[
             np.newaxis
         ]
         chunklengths = np.concatenate([full_chunks, last_chunk])
         uppers = np.cumsum(chunklengths)
         lowers = np.concatenate([[0], uppers[:-1]])
 
-        for idx, _ in enumerate(chunklengths):
+        feature_cols = self.cols_x + self.col_y_shifted
+
+        for idx, _ in enumerate(tqdm(chunklengths)):
             # fetch a chunk lazily
             participants_use = self.participants[lowers[idx] : uppers[idx]]
             chunk = self.lf.filter(
-                pl.col("participant").is_in(participants_use)
+                pl.col(self.col_pid).is_in(participants_use)
             ).collect()
 
-            df_x = chunk.select([self.col_pid + self.cols_x + self.col_y_shifted])
-            df_y = chunk.select([self.col_pid + self.col_y])
-
-            groups_x = (
-                df_x.groupby(self.col_pid)
-                .agg([pl.col(c) for c in self.cols_x + self.col_y_shifted])
-                .collect()
+            # Group X: list columns per participant
+            groups_x = chunk.group_by(self.col_pid).agg(
+                [pl.col(c) for c in feature_cols]
             )
-            groups_y = df_y.groupby(self.col_pid).agg(pl.col(self.col_y)).collect()
 
-            seqs_x = [
-                torch.tensor(row, dtype=torch.float32)
-                for row in groups_x.select(self.cols_x + self.col_y_shifted).to_numpy()
-            ]
-            seqs_y = [
-                torch.tensor(row, dtype=torch.long)
-                for row in groups_y.select(self.col_y).to_numpy()
-            ]
+            # Group Y: list column per participant
+            groups_y = chunk.group_by(self.col_pid).agg(pl.col(self.col_y))
+
+            seqs_x = []
+            for row in groups_x.iter_rows(named=True):
+                # Extract list columns in order
+                arrays = [
+                    np.asarray(row[c]).astype(float).reshape(-1) for c in feature_cols
+                ]
+                # Stack into shape (n_trials, n_features)
+                mat = np.column_stack(arrays)
+                seqs_x.append(torch.tensor(mat, dtype=torch.float32))
+
+            seqs_y = []
+            for row in groups_y.iter_rows(named=True):
+                arr = np.array(row[self.col_y[0]])
+                seqs_y.append(torch.tensor(arr, dtype=torch.long))
 
             X_3d = torch.nn.utils.rnn.pad_sequence(seqs_x, batch_first=True)
             y_3d = torch.nn.utils.rnn.pad_sequence(seqs_y, batch_first=True)
