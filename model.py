@@ -9,16 +9,30 @@ class LearnedPositionalEncoding(nn.Module):
 
     def forward(self, x):
         S = x.size(1)
-        assert S <= self.pos.num_embeddings, f"Sequence length {S} exceeds max_len {self.pos.num_embeddings}"
+        assert S <= self.pos.num_embeddings, (
+            f"Sequence length {S} exceeds max_len {self.pos.num_embeddings}"
+        )
         return x + self.pos(torch.arange(S, device=x.device))[None, :, :]
 
 
 class CausalEncoder(nn.Module):
-    def __init__(self, d_model=64, nhead=4, num_layers=4, ff=256, dropout=0.0,
-                 out_dim=1, in_dim=5, max_len=195, masktype="causal", windowsize=5):
+    def __init__(
+        self,
+        d_model=64,
+        nhead=4,
+        num_layers=4,
+        ff=256,
+        dropout=0.0,
+        out_dim=1,
+        in_dim=5,
+        max_len=195,  # 30
+        masktype="causal",
+        windowsize=5,
+    ):
         super().__init__()
         layer = nn.TransformerEncoderLayer(
-            d_model, nhead, ff, dropout, batch_first=True)
+            d_model, nhead, ff, dropout, batch_first=True
+        )
         self.enc = nn.TransformerEncoder(layer, num_layers)
         self.in_proj = nn.Linear(in_dim, d_model)
         self.out_proj = nn.Linear(d_model, out_dim)
@@ -42,11 +56,9 @@ class CausalEncoder(nn.Module):
     def windowed_causal_mask(S, n, device):
         # Mask everything outside the window [i - (n-1), i]
         # i.e., look back n steps (and also consider the current one, therefore n-1)
-        return (
-            torch.tril(torch.full((S, S), float("-inf"), device=device), diagonal=-(n - 1)) +
-            torch.triu(torch.full((S, S), float(
-                "-inf"), device=device), diagonal=1)
-        )
+        return torch.tril(
+            torch.full((S, S), float("-inf"), device=device), diagonal=-(n - 1)
+        ) + torch.triu(torch.full((S, S), float("-inf"), device=device), diagonal=1)
 
     def forward(self, x):
         S = x.size(1)

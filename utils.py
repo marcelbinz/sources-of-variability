@@ -629,7 +629,10 @@ def load_itc_dataset(load_from_osf=False):
 
     :param load_from_osf: If True, loads raw data from OSF, otherwise, loads data from disk.
     """
-
+    idx_n_trials = 2
+    n_trials_max = [14, 48, 195][
+        idx_n_trials
+    ]  # values correspond to avg n trials in risky no repetitions, mm "full" data select from 40-60 trials, and the full itc data set, respectively
     # load all four dataframes and concat into one df
     # each data frame from a different 2020 month (i.e., march, april, june, november)
     if load_from_osf:
@@ -645,6 +648,9 @@ def load_itc_dataset(load_from_osf=False):
     # make participant ids unique (i.e., they were re-used across sessions, but likely not from the same participant)
     df_itc_all = unique_participant_ids_itc(df_itc_all)
 
+    df_itc_all["rwn"] = df_itc_all.groupby("sid_unique").cumcount() + 1
+    df_itc_all = df_itc_all.query(f"""rwn <= {n_trials_max}""").drop(columns=["rwn"])
+
     col_pid = ["sid_unique"]
     cols_x = ["right_time", "right_val", "left_time", "left_val"]
     col_y = ["right_picked"]
@@ -653,7 +659,9 @@ def load_itc_dataset(load_from_osf=False):
     colnames_zscale = [["right_time", "left_time"], ["right_val", "left_val"]]
 
     n_participants_total = df_itc_all["sid_unique"].nunique()
-    n_trials_train = 130
+    n_trials_train = [10, 38, 130][
+        idx_n_trials
+    ]  # same mapping as above: risky no reps, mm "full", and itc full data set
 
     in_dim = len(cols_x) + len(col_y_shifted)
 
@@ -722,7 +730,7 @@ def load_risky_dataset(drop_ambiguous, drop_no_feedback, drop_repetitions):
     return df_risky, dict_out
 
 
-def load_mm_dataset(dataset_select="full"):
+def load_mm_dataset_lazy(dataset_select="full"):
     """Load and preprocess the Moral Machine dataset from Awad et al. (2018) Nature.
     Note that the full dataset is never loaded into memory, but we use polars and lazy dataframes
 
@@ -751,9 +759,9 @@ def load_mm_dataset(dataset_select="full"):
         # .with_columns(pl.col("Man").cast(pl.Int8))
     )
 
-    n_minimal = 40  # 10  #
-    n_maximal = 60  # 13  #
-    n_trials_train = 38  # 8  #   # at least 2, at max 5 to predict
+    n_minimal = 10  # 40  #
+    n_maximal = 13  # 60  #
+    n_trials_train = 8  # 38 #   # at least 2, at max 5 to predict
 
     df_scenario_pairs_small = participants_with_selected_number_of_trials(
         df, n_minimal, n_maximal, dataset_select
@@ -765,7 +773,7 @@ def load_mm_dataset(dataset_select="full"):
 
     df_scenario_pairs_small = df_scenario_pairs_small.sort(["UserID", "trial_id"])
 
-    df_scenario_pairs_small_wide = pivot_mm(df_scenario_pairs_small)
+    df_scenario_pairs_small_wide = pivot_mm_lazy(df_scenario_pairs_small)
     df_scenario_pairs_small_wide = df_scenario_pairs_small_wide.with_columns(
         pl.col(
             [
@@ -777,7 +785,7 @@ def load_mm_dataset(dataset_select="full"):
         ).fill_null(0)
     )
 
-    df_mm, dict_colnames = rename_mm_cols(df_scenario_pairs_small_wide)
+    df_mm, dict_colnames = rename_mm_cols_lazy(df_scenario_pairs_small_wide)
     logger.info("renamed columns")
 
     # n_participants_total = df_mm.select(pl.col("sid").unique()).shape[0]
@@ -801,7 +809,100 @@ def load_mm_dataset(dataset_select="full"):
     return df_mm, dict_out
 
 
-def rename_mm_cols(df):
+def load_mm_dataset(dataset_select="full"):
+    """Load and preprocess the Moral Machine dataset from Awad et al. (2018) Nature.
+    Note that the full dataset is never loaded into memory, but we use polars and lazy dataframes
+
+    :param dataset_select: Selects which version of the dataset to load ('testing_size' or 'full')
+
+    """
+
+    # some rows have null value on LeftHand. exclude them.
+    df = pl.scan_csv(
+        "data/SharedResponses.csv",
+        schema_overrides={
+            "ExtendedSessionID": pl.Utf8,
+            "ResponseID": pl.Utf8,
+            "UserID": pl.Utf8,
+            "Man": pl.Float32,
+        },
+        null_values=["(nan, nan, nan, nan)"],
+        ignore_errors=False,
+        has_header=True,
+    ).filter(
+        pl.col("LeftHand").is_not_null(),
+        pl.col("Man").is_not_null(),
+        pl.col("UserID").is_not_null(),
+    )
+
+    idx_ntrials = 1
+
+    n_minimal = [21, 40, 65][idx_ntrials]
+    n_maximal = [24, 60, 130][idx_ntrials]
+    n_trials_train = [18, 38, 55][idx_ntrials]
+
+    df_scenario_pairs_small = participants_with_selected_number_of_trials(
+        df, n_minimal, n_maximal, dataset_select
+    )
+    logger.info("made subselection of participants with selected nr. of trials")
+
+    df_scenario_pairs_small = add_and_remove_cols(df_scenario_pairs_small)
+    logger.info("added and removed columns")
+
+    df_scenario_pairs_small = df_scenario_pairs_small.sort(["UserID", "trial_id"])
+    df_scenario_pairs_small = df_scenario_pairs_small.collect()
+    df_scenario_pairs_small = df_scenario_pairs_small.to_pandas()
+
+    df_scenario_pairs_small_wide = pivot_mm(df_scenario_pairs_small)
+
+    df_mm, dict_colnames = rename_mm_cols(df_scenario_pairs_small_wide)
+
+    df_mm = recode_dummies(df_mm)
+
+    logger.info("renamed columns")
+
+    n_participants_total = df_mm["sid"].unique().shape[0]
+
+    in_dim = len(dict_colnames["cols_x"]) + len(dict_colnames["col_y_shifted"])
+
+    dict_out = {
+        "n_participants_total": n_participants_total,
+        "n_trials_train": n_trials_train,
+        "col_pid": dict_colnames["col_pid"],
+        "cols_x": dict_colnames["cols_x"],
+        "col_y": dict_colnames["col_y"],
+        "col_y_shifted": dict_colnames["col_y_shifted"],
+        "l_colnames_single_zscale": dict_colnames["l_colnames_single_zscale"],
+        "in_dim": in_dim,
+    }
+
+    return df_mm, dict_out
+
+
+def recode_dummies(df):
+    """add dummy variables for default choice and country cluster"""
+    # left right default?
+    df_dummies_left = pd.get_dummies(df["is_default_choice_left"]).astype(int)
+    df_dummies_left.columns = ["right_default", "left_default"]
+    df = pd.concat(
+        [
+            df.drop(columns=["is_default_choice_left", "is_default_choice_right"]),
+            df_dummies_left,
+        ],
+        axis=1,
+    )
+
+    # country cluster
+    df = add_country_cluster(df)
+    df_cluster_dummies = pd.get_dummies(df["country_cluster"]).astype(int)[
+        ["Eastern", "Southern"]
+    ]
+    df = pd.concat([df, df_cluster_dummies], axis=1)
+
+    return df
+
+
+def rename_mm_cols_lazy(df):
     # original column names in the dataset, and new column names that are consistent with the ITC and risky dataset
     colnames_old = [
         "UserID",
@@ -978,7 +1079,314 @@ def rename_mm_cols(df):
     return df, dict_colnames
 
 
-def pivot_mm(df):
+def rename_mm_cols(df):
+    # original column names in the dataset, and new column names that are consistent with the ITC and risky dataset
+    colnames_old = [
+        "UserID",
+        "Intervention_left",
+        "CrossingSignal_left",
+        "NumberOfCharacters_left",
+        "Man_left",
+        "Woman_left",
+        "Pregnant_left",
+        "Stroller_left",
+        "OldMan_left",
+        "OldWoman_left",
+        "Boy_left",
+        "Girl_left",
+        "Homeless_left",
+        "LargeWoman_left",
+        "LargeMan_left",
+        "Criminal_left",
+        "MaleExecutive_left",
+        "FemaleExecutive_left",
+        "FemaleAthlete_left",
+        "MaleAthlete_left",
+        "FemaleDoctor_left",
+        "MaleDoctor_left",
+        "Dog_left",
+        "Cat_left",
+        "Intervention_right",
+        "CrossingSignal_right",
+        "NumberOfCharacters_right",
+        "Man_right",
+        "Woman_right",
+        "Pregnant_right",
+        "Stroller_right",
+        "OldMan_right",
+        "OldWoman_right",
+        "Boy_right",
+        "Girl_right",
+        "Homeless_right",
+        "LargeWoman_right",
+        "LargeMan_right",
+        "Criminal_right",
+        "MaleExecutive_right",
+        "FemaleExecutive_right",
+        "FemaleAthlete_right",
+        "MaleAthlete_right",
+        "FemaleDoctor_right",
+        "MaleDoctor_right",
+        "Dog_right",
+        "Cat_right",
+    ]
+
+    colnames_new = [
+        "sid",
+        "left_intervention",
+        "left_crossingsignal",
+        "left_numberofcharacters",
+        "left_man",
+        "left_woman",
+        "left_pregnant",
+        "left_stroller",
+        "left_oldman",
+        "left_oldwoman",
+        "left_boy",
+        "left_girl",
+        "left_homeless",
+        "left_largewoman",
+        "left_largeman",
+        "left_criminal",
+        "left_maleexecutive",
+        "left_femaleexecutive",
+        "left_femaleathlete",
+        "left_maleathlete",
+        "left_femaledoctor",
+        "left_maledoctor",
+        "left_dog",
+        "left_cat",
+        "right_intervention",
+        "right_crossingsignal",
+        "right_numberofcharacters",
+        "right_man",
+        "right_woman",
+        "right_pregnant",
+        "right_stroller",
+        "right_oldman",
+        "right_oldwoman",
+        "right_boy",
+        "right_girl",
+        "right_homeless",
+        "right_largewoman",
+        "right_largeman",
+        "right_criminal",
+        "right_maleexecutive",
+        "right_femaleexecutive",
+        "right_femaleathlete",
+        "right_maleathlete",
+        "right_femaledoctor",
+        "right_maledoctor",
+        "right_dog",
+        "right_cat",
+    ]
+
+    dict_map_cols = {old: colnames_new[idx] for idx, old in enumerate(colnames_old)}
+    df = df.rename(columns=dict_map_cols)
+    df["sid_unique"] = df["sid"]  # for consistency with itc
+
+    colnames_zscale = [
+        "left_crossingsignal",
+        "left_numberofcharacters",
+        "left_man",
+        "left_woman",
+        "left_pregnant",
+        "left_stroller",
+        "left_oldman",
+        "left_oldwoman",
+        "left_boy",
+        "left_girl",
+        "left_homeless",
+        "left_largewoman",
+        "left_largeman",
+        "left_criminal",
+        "left_maleexecutive",
+        "left_femaleexecutive",
+        "left_femaleathlete",
+        "left_maleathlete",
+        "left_femaledoctor",
+        "left_maledoctor",
+        "left_dog",
+        "left_cat",
+        "right_crossingsignal",
+        "right_numberofcharacters",
+        "right_man",
+        "right_woman",
+        "right_pregnant",
+        "right_stroller",
+        "right_oldman",
+        "right_oldwoman",
+        "right_boy",
+        "right_girl",
+        "right_homeless",
+        "right_largewoman",
+        "right_largeman",
+        "right_criminal",
+        "right_maleexecutive",
+        "right_femaleexecutive",
+        "right_femaleathlete",
+        "right_maleathlete",
+        "right_femaledoctor",
+        "right_maledoctor",
+        "right_dog",
+        "right_cat",
+    ]
+
+    cols_x = (
+        [c for c in colnames_new if c not in ["sid", "sid_unique"]]
+        + ["left_default", "right_default"]
+        + ["PedPed"]
+        + ["Eastern", "Southern"]
+    )
+    col_y = ["right_picked"]
+    col_y_shifted = ["right_picked_prev"]
+    col_pid = ["sid_unique"]
+
+    dict_colnames = {
+        "l_colnames_single_zscale": colnames_zscale,
+        "cols_x": cols_x,
+        "col_y": col_y,
+        "col_y_shifted": col_y_shifted,
+        "col_pid": col_pid,
+    }
+
+    return df, dict_colnames
+
+
+def add_country_cluster(df):
+    """add country cluster column to the dataset based on the UserCountry3 column"""
+    df_unique_countries = df[["sid_unique", "UserCountry3"]].drop_duplicates()
+    df_unique_countries["rwn"] = df_unique_countries.groupby("sid_unique")[
+        "UserCountry3"
+    ].cumcount()
+    # take the country a person first logged in
+    df_first_country = df_unique_countries.query("rwn == 0").drop(columns=["rwn"])
+    df.drop(columns=["UserCountry3"], inplace=True)
+    # and add it to the main dataset
+    df = pd.merge(df, df_first_country, how="left", on="sid_unique")
+    df_lookup_nationality = lookup_country_cluster()
+    n_before = df["sid_unique"].drop_duplicates().shape[0]
+    df = pd.merge(df, df_lookup_nationality, how="inner", on="UserCountry3")
+    n_after = df["sid_unique"].drop_duplicates().shape[0]
+    logger.info(
+        f"""dropped {n_before - n_after} participants due to missing country - country cluster mapping"""
+    )
+    return df
+
+
+def lookup_country_cluster():
+    """country clusters from the supplementary material of Awad et al. (2018) Nature"""
+    country3_to_cluster = {
+        # --- Western (Clusters 1–4) ---
+        "CHE": "Western",
+        "DEU": "Western",
+        "NOR": "Western",
+        "DNK": "Western",
+        "NLD": "Western",
+        "FIN": "Western",
+        "LUX": "Western",
+        "AUT": "Western",
+        "ISL": "Western",
+        "SWE": "Western",
+        "CYP": "Western",
+        "ITA": "Western",
+        "BGR": "Western",
+        "HRV": "Western",
+        "ROU": "Western",
+        "EST": "Western",
+        "SRB": "Western",
+        "MNE": "Western",
+        "BEL": "Western",
+        "ESP": "Western",
+        "GRC": "Western",
+        "BIH": "Western",
+        "TTO": "Western",
+        "GBR": "Western",
+        "NZL": "Western",
+        "IRL": "Western",
+        "USA": "Western",
+        "CAN": "Western",
+        "ZAF": "Western",
+        "LTU": "Western",
+        "VNM": "Western",
+        "TUN": "Western",
+        "QAT": "Western",
+        "ALB": "Western",
+        "LVA": "Western",
+        "SVN": "Western",
+        "UKR": "Western",
+        "BLR": "Western",
+        "MDA": "Western",
+        "GEO": "Western",
+        "KAZ": "Western",
+        "BRA": "Western",
+        "IDN": "Western",
+        "MYS": "Western",
+        "JAM": "Western",
+        # --- Eastern (Clusters 5–6) ---
+        "KHM": "Eastern",
+        "JPN": "Eastern",
+        "MAC": "Eastern",  # Macao (not in your list; skipped if absent)
+        "CHN": "Eastern",
+        "KOR": "Eastern",
+        "TWN": "Eastern",
+        "THA": "Eastern",
+        "KWT": "Eastern",
+        "SAU": "Eastern",
+        "HKG": "Eastern",
+        "SGP": "Eastern",
+        "BGD": "Eastern",
+        "IRN": "Eastern",
+        "NPL": "Eastern",  # Nepal (not in your list; skipped if absent)
+        "PAK": "Eastern",
+        "JOR": "Eastern",
+        "PSE": "Eastern",
+        "ARM": "Eastern",
+        "MKD": "Eastern",  # Macedonia (not in your list; skipped if absent)
+        "IND": "Eastern",
+        "ARE": "Eastern",
+        "EGY": "Eastern",
+        "LBN": "Eastern",
+        "PHL": "Eastern",
+        # --- Southern (Clusters 7–8) ---
+        "NCL": "Southern",  # New Caledonia (not in your list; skipped if absent)
+        "REU": "Southern",
+        "MLT": "Southern",
+        "MNG": "Southern",
+        "DZA": "Southern",
+        "MAR": "Southern",
+        "DOM": "Southern",
+        "FRA": "Southern",
+        "CZE": "Southern",
+        "SVK": "Southern",
+        "PAN": "Southern",
+        "AZE": "Southern",
+        "TUR": "Southern",
+        "PER": "Southern",
+        "ARG": "Southern",
+        "URY": "Southern",
+        "BOL": "Southern",
+        "ECU": "Southern",
+        "COL": "Southern",
+        "VEN": "Southern",
+        "HND": "Southern",
+        "SLV": "Southern",
+        "GTM": "Southern",
+        "PRY": "Southern",
+        "CHL": "Southern",
+        "PRI": "Southern",
+        "CRI": "Southern",
+        "MEX": "Southern",
+    }
+
+    df_lookup_nationality = pd.DataFrame(
+        list(country3_to_cluster.items()), columns=["UserCountry3", "country_cluster"]
+    )
+
+    return df_lookup_nationality
+
+
+def pivot_mm_lazy(df):
     cols = df.collect_schema().names()
     cols_reorder = (
         ["UserID", "trial_id"]
@@ -1026,6 +1434,31 @@ def pivot_mm(df):
     return df_wide
 
 
+def pivot_mm(df):
+    cols_stay = [
+        col for col in df.columns if col not in ["UserID", "trial_id", "right_picked"]
+    ]
+    cols_reorder = ["UserID", "trial_id"] + cols_stay + ["right_picked"]
+    df = df[cols_reorder]
+    lh = df.query("LeftHand == 1").drop(columns=["LeftHand"])
+    rh = df.query("LeftHand == 0").drop(columns=["LeftHand"])
+    cols_fixed = ["UserID", "trial_id", "PedPed", "right_picked", "UserCountry3"]
+
+    df_mm_wide = pd.merge(
+        lh,
+        rh,
+        on=cols_fixed,
+        how="inner",
+        suffixes=["_left", "_right"],
+    )
+
+    # assert df_mm_wide.isna().sum().sum() == 0, (
+    #     "nas should not be present at this point anymore"
+    # )
+
+    return df_mm_wide
+
+
 def add_and_remove_cols(df):
     """Add necessary columns (trial_id, right_picked, is_default_choice) and remove unnecessary columns from the dataset."""
     # add trial_id column
@@ -1038,21 +1471,19 @@ def add_and_remove_cols(df):
     ).sort("UserID", "trial_id")
 
     # drop some not required columns
-    df = df.drop(
-        [
-            "ExtendedSessionID",
-            "DescriptionShown",
-            "UserCountry3",
-            "n_scenarios_saved",
-            "Template",
-            "Barrier",
-            "ScenarioType",
-            "ScenarioTypeStrict",
-            "DiffNumberOFCharacters",
-            "NonDefaultChoice",
-            "ScenarioOrder",
-        ]
-    )
+    cols_drop = [
+        "ExtendedSessionID",
+        "DescriptionShown",
+        "n_scenarios_saved",
+        "Template",
+        "Barrier",
+        "ScenarioType",
+        "ScenarioTypeStrict",
+        "DiffNumberOFCharacters",
+        "NonDefaultChoice",
+        "ScenarioOrder",
+    ]
+    df = df.drop(cols_drop)
     df = df.sort(["UserID", "trial_id", "ResponseID"])
     df = df.with_columns(
         abs(
@@ -1110,21 +1541,21 @@ def participants_with_selected_number_of_trials(
             .filter(
                 pl.col("len") == 60  # just for testing with few data
             )
-        )
+        ).collect()
     elif dataset_select == "full":
         # is about 30 Mio rows with 2 rows per trial_id (1.2 Mio subjects)
         df_user_agg = (
             df_scenario_pairs.group_by("UserID")
             .len()
             .filter(
-                (pl.col("len") >= (n_minimal * 2)) & (pl.col("len") <= (n_maximal * 2))
+                (pl.col("len") >= (n_minimal * 2)), (pl.col("len") <= (n_maximal * 2))
             )
-        )
+        ).collect()
 
     # only include subset of users
     # note. join much slower, and breaks memory once collected()
     df_scenario_pairs_small = df_scenario_pairs.filter(
-        pl.col("UserID").is_in(df_user_agg.collect()["UserID"].implode())
+        pl.col("UserID").is_in(df_user_agg["UserID"].implode())
     )
 
     return df_scenario_pairs_small
@@ -1259,6 +1690,7 @@ def rename_risky_cols(df_risky):
 
     dict_map_cols = {old: colnames_new[idx] for idx, old in enumerate(colnames_old)}
     df_risky.rename(columns=dict_map_cols, inplace=True)
+    df_risky["sid"] = df_risky["sid_unique"]  # for consistency with itc
 
     # # filter df for problems with max two vals per side
     # df_risky = df_risky.query("left_1_prob + left_2_prob == 1 and right_1_prob + right_2_prob == 1")

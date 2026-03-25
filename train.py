@@ -3,7 +3,6 @@ import argparse
 import random
 import numpy as np
 import pandas as pd
-from sklearn import logger
 import polars as pl
 import torch
 import wandb
@@ -88,7 +87,7 @@ def parseargs():
         "--d_ff",
         type=int,
         default=256,
-        choices=[16, 32, 64, 128, 256],
+        choices=[8, 16, 32, 64, 128, 256],
     )
     aa(
         "--is_testcase",
@@ -101,7 +100,7 @@ def parseargs():
         "--num_layers",
         type=int,
         default=4,
-        choices=[1, 2, 4],
+        choices=[1, 2, 3, 4],
         help="Number of transformer encoder layers.",
     )
     aa(
@@ -204,23 +203,24 @@ def run(
 
     #### SCALING ####
     # zscale individual xs
-    # df[dict_info["cols_x"]] = df[dict_info["cols_x"]].apply(zscore)
 
     # tf of X only required in itc and risky
     if dataset_name in ["itc", "risky"]:
         df = ut.zscore_grouped_cols(df, dict_info["l_colnames_grouped_zscale"], tf=tf)
     # for mm dataset, we only apply z per col, not pairs of cols
     elif dataset_name == "mm":
-        df = ut.zscore_single_col_lazy(df, dict_info["l_colnames_single_zscale"])
+        df[dict_info["l_colnames_single_zscale"]] = df[
+            dict_info["l_colnames_single_zscale"]
+        ].apply(zscore)
 
     logger.info("applied transformations")
     #### CONDITIONS ####
 
-    if dataset_name in ["itc", "risky"]:
+    if dataset_name in ["itc", "risky", "mm"]:
         df_original, df_id_nohist, df_shared_hist, df_shared_nohist = (
             ut.make_conditions(df)
         )
-    elif dataset_name == "mm":
+    elif dataset_name == "nothing_lazy_currently":
         df_original, df_id_nohist, df_shared_hist, df_shared_nohist = (
             ut.make_conditions_lazy(df)
         )
@@ -228,7 +228,7 @@ def run(
     logger.info("created four conditions")
 
     batch_size = 32
-    num_epochs = 25  # 150 250
+    num_epochs = 250  # 150 250
     lr = 3e-4
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -273,7 +273,7 @@ def run(
 
     #### LOAD TRAIN AND DEV DATA ####
 
-    if dataset_name in ["itc", "risky"]:
+    if dataset_name in ["itc", "risky", "mm"]:
         # can process all data in memory for itc and risky datasets, but not for mm dataset
         # loads all conditions and only then selects the relevant condition
         # this is not possible for the mm dataset
@@ -332,7 +332,7 @@ def run(
         dataloader_dev = DataLoader(dataset_dev, batch_size=batch_size, shuffle=True)
         logger.info("created DataLoaders")
 
-    elif dataset_name == "mm":
+    elif dataset_name == "no_lazy_currently":
         df_use = ut.shift_y_lazy(l_dfs[condition_id])
         logger.info("shifted y col")
 
@@ -403,7 +403,7 @@ def run(
             batch_y = batch_y.to(device).float()
             batch_mask = batch_mask.to(device).bool()
 
-            outputs = model(batch_x).squeeze(2)
+            outputs = model(batch_x)
             # loss
             loss = criterion(outputs[batch_mask], batch_y[batch_mask])
             train_loss_total += loss.item()
@@ -426,7 +426,7 @@ def run(
             batch_x = batch_x.to(device).float()
             batch_y = batch_y.to(device).float()
             batch_mask = batch_mask.to(device).bool()
-            outputs = model(batch_x).squeeze(2)
+            outputs = model(batch_x)
             loss_dev = criterion(outputs[batch_mask], batch_y[batch_mask])
             dev_loss_total += loss_dev.item()
             # accuracy
