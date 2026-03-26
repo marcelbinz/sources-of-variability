@@ -617,19 +617,22 @@ def load_sov_dataset(dataset_name, dataset_select):
                 drop_repetitions=dataset_select == "no_repetitions",
             )
         case "itc":
-            df, dict_info = load_itc_dataset()
+            df, dict_info = load_itc_dataset(dataset_select=dataset_select)
         case "mm":
             df, dict_info = load_mm_dataset(dataset_select=dataset_select)
     return df, dict_info
 
 
-def load_itc_dataset(load_from_osf=False):
+def load_itc_dataset(dataset_select, load_from_osf=False):
     """
     Load and preprocess the ITC dataset from Agrawal et al. (2023) JEP:G containing four different months of 2020.
 
+    :param dataset_select: full dataset ("full"), dataset similar size to Peterson "small", or dataset similar to Awad (MM, "medium")
     :param load_from_osf: If True, loads raw data from OSF, otherwise, loads data from disk.
     """
-    idx_n_trials = 2
+
+    dataselects = np.array(["small", "medium", "full"])
+    idx_n_trials = np.where(dataselects == dataset_select)[0].item()
     n_trials_max = [14, 48, 195][
         idx_n_trials
     ]  # values correspond to avg n trials in risky no repetitions, mm "full" data select from 40-60 trials, and the full itc data set, respectively
@@ -764,7 +767,7 @@ def load_mm_dataset_lazy(dataset_select="full"):
     n_trials_train = 8  # 38 #   # at least 2, at max 5 to predict
 
     df_scenario_pairs_small = participants_with_selected_number_of_trials(
-        df, n_minimal, n_maximal, dataset_select
+        df, n_minimal, n_maximal
     )
     logger.info("made subselection of participants with selected nr. of trials")
 
@@ -809,11 +812,11 @@ def load_mm_dataset_lazy(dataset_select="full"):
     return df_mm, dict_out
 
 
-def load_mm_dataset(dataset_select="full"):
+def load_mm_dataset(dataset_select):
     """Load and preprocess the Moral Machine dataset from Awad et al. (2018) Nature.
     Note that the full dataset is never loaded into memory, but we use polars and lazy dataframes
 
-    :param dataset_select: Selects which version of the dataset to load ('testing_size' or 'full')
+    :param dataset_select: Selects how to subset the full MM data set by Awad et al.
 
     """
 
@@ -835,14 +838,15 @@ def load_mm_dataset(dataset_select="full"):
         pl.col("UserID").is_not_null(),
     )
 
-    idx_ntrials = 1
+    seq_lengths = np.array(["short_seq", "med_seq", "long_seq"])
+    idx_ntrials = np.where(seq_lengths == dataset_select)[0].item()
 
     n_minimal = [21, 40, 65][idx_ntrials]
     n_maximal = [24, 60, 130][idx_ntrials]
     n_trials_train = [18, 38, 55][idx_ntrials]
 
     df_scenario_pairs_small = participants_with_selected_number_of_trials(
-        df, n_minimal, n_maximal, dataset_select
+        df, n_minimal, n_maximal
     )
     logger.info("made subselection of participants with selected nr. of trials")
 
@@ -1520,9 +1524,7 @@ def add_and_remove_cols(df):
     return df
 
 
-def participants_with_selected_number_of_trials(
-    df, n_minimal, n_maximal, dataset_select
-):
+def participants_with_selected_number_of_trials(df, n_minimal, n_maximal):
     # only include trials in which both scenarios were saved
     df_response_agg = (
         df.group_by("ResponseID")
@@ -1533,24 +1535,12 @@ def participants_with_selected_number_of_trials(
     # only scenarios with pairs of rows
     df_scenario_pairs = df.join(df_response_agg, on="ResponseID")
 
-    if dataset_select == "testing_size":
-        # is about 180k rows with 2 rows per trial_id (3k subjects)
-        df_user_agg = (
-            df_scenario_pairs.group_by("UserID")
-            .len()
-            .filter(
-                pl.col("len") == 60  # just for testing with few data
-            )
-        ).collect()
-    elif dataset_select == "full":
-        # is about 30 Mio rows with 2 rows per trial_id (1.2 Mio subjects)
-        df_user_agg = (
-            df_scenario_pairs.group_by("UserID")
-            .len()
-            .filter(
-                (pl.col("len") >= (n_minimal * 2)), (pl.col("len") <= (n_maximal * 2))
-            )
-        ).collect()
+    # is about 30 Mio rows with 2 rows per trial_id (1.2 Mio subjects)
+    df_user_agg = (
+        df_scenario_pairs.group_by("UserID")
+        .len()
+        .filter((pl.col("len") >= (n_minimal * 2)), (pl.col("len") <= (n_maximal * 2)))
+    ).collect()
 
     # only include subset of users
     # note. join much slower, and breaks memory once collected()

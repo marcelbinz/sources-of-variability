@@ -41,8 +41,19 @@ def parseargs():
     aa(
         "--dataset_select",
         type=str,
-        choices=["", "repetitions", "no_repetitions", "testing_size", "full"],
-        help="Only relevant for 'risky' (problem repetitions or not?) and 'mm' (full data or testset) datasets.",
+        choices=[
+            "",
+            "repetitions",
+            "no_repetitions",
+            "testing_size",
+            "full",
+            "small",
+            "medium",
+            "short_seq",
+            "med_seq",
+            "long_seq",
+        ],
+        help="Has a different meaning for the different datasets.",
     )
     aa(
         "--condition_name",
@@ -241,12 +252,9 @@ def run(
     else:
         n_participants_subset = dict_info["n_participants_total"]
 
-    if dataset_name in ["risky", "mm"]:
-        wandb_name = f"""dataset={dataset_name}_{dataset_select}_condition={condition_name}_more_shuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info["n_trials_train"]}_masktype={masktype}_windowsize={windowsize}"""
-        dataset_desc = f"{dataset_name}_{dataset_select}"
-    elif dataset_name == "itc":
-        wandb_name = f"""dataset={dataset_name}_condition={condition_name}_more_shuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info["n_trials_train"]}_masktype={masktype}_windowsize={windowsize}"""
-        dataset_desc = dataset_name
+    wandb_name = f"""dataset={dataset_name}_{dataset_select}_condition={condition_name}_more_shuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info["n_trials_train"]}_masktype={masktype}_windowsize={windowsize}"""
+    dataset_desc = f"{dataset_name}_{dataset_select}"
+
     run = wandb.init(
         entity="mirkothalmann-helmholtz-munich",
         project="source-of-variablity",
