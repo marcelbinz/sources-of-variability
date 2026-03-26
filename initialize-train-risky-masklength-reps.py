@@ -11,10 +11,8 @@ import os
 base_dict = {
     "rnd_seed": 1,
     "python_file": "train.py",
-    "dataset_name": "itc", # or "risky"
-    "dataset_select": "repetitions", # is ignored for itc data"
-    "tf":"log_values"
-
+    "dataset_name": "risky", # or "itc"
+    "dataset_select": "repetitions", # is ignored for itc data
 }
 
 l_condition_names = ["original"] # [,, "shared_nohist", "shared_hist", "id_nohist"]
@@ -30,14 +28,12 @@ l_condition_names = ["original"] # [,, "shared_nohist", "shared_hist", "id_nohis
 swap_colnames_2 = ['[[]]'] # ,'[[\"right_val\", \"left_val\"]]', '[[\"right_time\", \"left_time\"]]'
 shuffle_single_colnames_2 = ['[]']
 
-
-l_d_model = [32]
-l_d_ff = [256]
+l_d_model = [16]
+l_d_ff = [64]
 l_is_testcase = ["False"]
 l_num_layers = [2]
 l_masktype = ["windowed_causal"] # "causal"
-l_windowsize = [30, 40]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
-
+l_windowsize = [1, 2, 3, 5, 10]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
 
 
 # second part can be dropped when only generated data sets (i.e., four conditions) are used
@@ -83,7 +79,6 @@ def run_command(args):
     command = [
         "python",
         args["python_file"],
-        "--tf", args["tf"],
         "--dataset_name", args["dataset_name"],
         "--dataset_select", args["dataset_select"],
         "--rnd_seed", str(args["rnd_seed"]),

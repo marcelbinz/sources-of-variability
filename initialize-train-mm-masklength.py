@@ -11,10 +11,10 @@ import os
 base_dict = {
     "rnd_seed": 1,
     "python_file": "train.py",
-    "dataset_name": "risky", # or "itc"
+    "dataset_name": "mm",  # or "itc"
 }
-l_dataset_select = ["repetitions", "no_repetitions"]
-l_condition_names = ["original", "shared_nohist", "shared_hist", "id_nohist"] # [,]
+l_dataset_select = ["full"]  # "testing_size"
+l_condition_names = ["original"]  # [,],, "id_nohist", "shared_nohist", "shared_hist"
 
 
 # swap_colnames and shuffle_single_colnames are only needed when variables within a condition are shuffled
@@ -22,45 +22,72 @@ l_condition_names = ["original", "shared_nohist", "shared_hist", "id_nohist"] # 
 # as not all fully crossed, get combinations in two steps
 
 # for itc data:
-#swap_colnames = ['[[\"right_val\", \"left_val\"], [\"right_time\", \"left_time\"]]']
-#shuffle_single_colnames = ['[\"right_picked_prev\"]', '[]']
-swap_colnames_2 = ['[[]]'] # ,'[[\"right_val\", \"left_val\"]]', '[[\"right_time\", \"left_time\"]]'
-shuffle_single_colnames_2 = ['[]']
+# swap_colnames = ['[[\"right_val\", \"left_val\"], [\"right_time\", \"left_time\"]]']
+# shuffle_single_colnames = ['[\"right_picked_prev\"]', '[]']
+swap_colnames_2 = [
+    "[[]]"
+]  # ,'[[\"right_val\", \"left_val\"]]', '[[\"right_time\", \"left_time\"]]'
+shuffle_single_colnames_2 = ["[]"]
 
-l_d_model = [16]
-l_d_ff = [64]
+l_d_model = [8]
+l_d_ff = [16]
 l_is_testcase = ["False"]
 l_num_layers = [2]
-l_masktype = ["causal"] # "windowed_causal"
-l_windowsize = [2]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
+l_masktype = ["windowed_causal"]  # "causal"
+l_windowsize = [
+    1,
+    2,
+    3,
+    5,
+    10,
+]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
 
 
 # second part can be dropped when only generated data sets (i.e., four conditions) are used
 # Generate all combinations
-combinations = list(chain(
-    # product(
-    #     l_condition_names, swap_colnames, shuffle_single_colnames,
-    #     l_d_model, l_d_ff, l_is_testcase, l_num_layers, l_masktype, l_windowsize
-    # ),
-    product(
-        l_dataset_select, l_condition_names, swap_colnames_2, shuffle_single_colnames_2,
-        l_d_model, l_d_ff, l_is_testcase, l_num_layers, l_masktype, l_windowsize
+combinations = list(
+    chain(
+        # product(
+        #     l_condition_names, swap_colnames, shuffle_single_colnames,
+        #     l_d_model, l_d_ff, l_is_testcase, l_num_layers, l_masktype, l_windowsize
+        # ),
+        product(
+            l_dataset_select,
+            l_condition_names,
+            swap_colnames_2,
+            shuffle_single_colnames_2,
+            l_d_model,
+            l_d_ff,
+            l_is_testcase,
+            l_num_layers,
+            l_masktype,
+            l_windowsize,
+        )
     )
-))
+)
 
 # Create the list of dictionaries
 arg_combinations = []
 #  in combinations:
 for (
-    dataset_select, condition_name, swap_colnames, shuffle_single_colnames, d_model, d_ff, is_testcase, num_layers, masktype, windowsize
+    dataset_select,
+    condition_name,
+    swap_colnames,
+    shuffle_single_colnames,
+    d_model,
+    d_ff,
+    is_testcase,
+    num_layers,
+    masktype,
+    windowsize,
 ) in combinations:  # , agreement
     temp_dict = base_dict.copy()
     temp_dict.update(
         {
             "dataset_select": dataset_select,
             "condition_name": condition_name,
-            "swap_colnames":swap_colnames, 
-            "shuffle_single_colnames":shuffle_single_colnames,
+            "swap_colnames": swap_colnames,
+            "shuffle_single_colnames": shuffle_single_colnames,
             "d_model": d_model,
             "d_ff": d_ff,
             "is_testcase": is_testcase,
@@ -72,28 +99,39 @@ for (
     arg_combinations.append(temp_dict)
 
 
-
 # Function to run the command
+
 
 def run_command(args):
     command = [
         "python",
         args["python_file"],
-        "--dataset_name", args["dataset_name"],
-        "--dataset_select", args["dataset_select"],
-        "--rnd_seed", str(args["rnd_seed"]),
-        "--d_model", str(args["d_model"]),
-        "--d_ff", str(args["d_ff"]),
-        "--is_testcase", str(args["is_testcase"]),
-        "--num_layers", str(args["num_layers"]),
-        "--masktype", str(args["masktype"]),
-        "--windowsize", str(args["windowsize"]),
-        "--condition_name", args["condition_name"],
-        "--swap_colnames", args["swap_colnames"],
-        "--shuffle_single_colnames", args["shuffle_single_colnames"],
+        "--dataset_name",
+        args["dataset_name"],
+        "--dataset_select",
+        args["dataset_select"],
+        "--rnd_seed",
+        str(args["rnd_seed"]),
+        "--d_model",
+        str(args["d_model"]),
+        "--d_ff",
+        str(args["d_ff"]),
+        "--is_testcase",
+        str(args["is_testcase"]),
+        "--num_layers",
+        str(args["num_layers"]),
+        "--masktype",
+        str(args["masktype"]),
+        "--windowsize",
+        str(args["windowsize"]),
+        "--condition_name",
+        args["condition_name"],
+        "--swap_colnames",
+        args["swap_colnames"],
+        "--shuffle_single_colnames",
+        args["shuffle_single_colnames"],
     ]
     subprocess.run(command)
-
 
 
 # serial
@@ -105,9 +143,7 @@ with ThreadPoolExecutor(max_workers=20) as executor:
     executor.map(run_command, arg_combinations)
 
 
-
 # best hyperparameters for itc data
-
 
 
 # best hyperparameters for risky no repetitions data
@@ -116,7 +152,7 @@ with ThreadPoolExecutor(max_workers=20) as executor:
 # l_is_testcase = ["False"]
 # l_num_layers = [1]
 # l_masktype = ["causal"] # "windowed_causal"
-# l_windowsize = [2] 
+# l_windowsize = [2]
 
 # best hyperparameters for risky peterson selected data
 # l_d_model = [32]
