@@ -35,8 +35,12 @@ def parseargs():
     aa(
         "--dataset_name",
         type=str,
-        choices=["itc", "risky", "mm"],
-        help="'itc' for Agrawal et al. (2023) JEP:G, 'risky' for Peterson et al. (2021) Science, 'mm' for Moral Machine by Awad et al. (2018) Nature",
+        choices=["itc", "risky", "mm", "2abd"],
+        help=""
+        "'itc' for Agrawal et al. (2023) JEP:G, "
+        "'risky' for Peterson et al. (2021) Science, "
+        "'mm' for Moral Machine by Awad et al. (2018) Nature, "
+        "'2abd' for the 2ABD dataset consisting of Gershman (2018), Fan et al. (2023), and Witte et al. (2025).",
     )
     aa(
         "--dataset_select",
@@ -216,7 +220,7 @@ def run(
     # zscale individual xs
 
     # tf of X only required in itc and risky
-    if dataset_name in ["itc", "risky"]:
+    if dataset_name in ["itc", "risky", "2abd"]:
         df = ut.zscore_grouped_cols(df, dict_info["l_colnames_grouped_zscale"], tf=tf)
     # for mm dataset, we only apply z per col, not pairs of cols
     elif dataset_name == "mm":
@@ -225,9 +229,9 @@ def run(
         ].apply(zscore)
 
     logger.info("applied transformations")
-    #### CONDITIONS ####
 
-    if dataset_name in ["itc", "risky", "mm"]:
+    #### CONDITIONS ####
+    if dataset_name in ["itc", "risky", "mm", "2abd"]:
         df_original, df_id_nohist, df_shared_hist, df_shared_nohist = (
             ut.make_conditions(df)
         )
@@ -281,7 +285,7 @@ def run(
 
     #### LOAD TRAIN AND DEV DATA ####
 
-    if dataset_name in ["itc", "risky", "mm"]:
+    if dataset_name in ["itc", "risky", "mm", "2abd"]:
         # can process all data in memory for itc and risky datasets, but not for mm dataset
         # loads all conditions and only then selects the relevant condition
         # this is not possible for the mm dataset
@@ -343,8 +347,6 @@ def run(
     elif dataset_name == "no_lazy_currently":
         df_use = ut.shift_y_lazy(l_dfs[condition_id])
         logger.info("shifted y col")
-
-        ## TODO: implement shuffling for mm dataset as well, currently only implemented for itc and risky datasets
 
         #### SPLIT AND FORMAT ####
         df_train, df_dev = ut.train_dev_split_lazy(

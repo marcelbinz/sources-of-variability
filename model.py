@@ -25,7 +25,7 @@ class CausalEncoder(nn.Module):
         dropout=0.0,
         out_dim=1,
         in_dim=5,
-        max_len=195,  # 30
+        max_len=300,  # 195,  # 30, note. 300 for 2abd, 195 for itc
         masktype="causal",
         windowsize=5,
     ):

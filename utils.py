@@ -620,7 +620,39 @@ def load_sov_dataset(dataset_name, dataset_select):
             df, dict_info = load_itc_dataset(dataset_select=dataset_select)
         case "mm":
             df, dict_info = load_mm_dataset(dataset_select=dataset_select)
+        case "2abd":
+            df, dict_info = load_2abd_dataset()
     return df, dict_info
+
+
+def load_2abd_dataset():
+    """Load and preprocess the 2-armed bandit dataset merged from Gershman (2018), Fan et al. (2023), and Witte et al. (2025)."""
+    df_bandit = pd.read_csv("data/2-armed-bandits-merged.csv")
+    n_trials_train = 150
+    colnames_zscale = [
+        [c for c in df_bandit.columns if c.endswith("_m")],
+        [c for c in df_bandit.columns if c.endswith("_v")],
+    ]
+    n_participants_total = df_bandit["sid"].unique().shape[0]
+    cols_x = [c for c in df_bandit.columns if "_m" in c or "_v" in c]
+    col_y = ["right_picked"]
+    col_y_shifted = ["right_picked_prev"]
+    col_pid = ["sid"]
+
+    dict_out = {
+        "l_colnames_grouped_zscale": colnames_zscale,
+        "cols_x": cols_x,
+        "col_y": col_y,
+        "col_y_shifted": col_y_shifted,
+        "col_pid": col_pid,
+        "n_participants_total": n_participants_total,
+        "n_trials_train": n_trials_train,
+        "in_dim": len(cols_x) + len(col_y_shifted),
+    }
+
+    df_bandit.sort_values(["sid", "block", "trial_id"], inplace=True)
+
+    return df_bandit, dict_out
 
 
 def load_itc_dataset(dataset_select, load_from_osf=False):
