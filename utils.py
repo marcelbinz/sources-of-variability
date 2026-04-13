@@ -1,8 +1,9 @@
+import re
+
 import requests
 from io import StringIO
 import numpy as np
 import pandas as pd
-from scipy import stats
 import polars as pl
 import torch
 from functools import reduce
@@ -499,7 +500,7 @@ def swap_two_cols(df, colnames, rs, prop_swap=0.5):
     df.loc[idxs_swap, colnames[0]] = to_be_swapped1
     df.loc[idxs_swap, colnames[1]] = to_be_swapped0
 
-    return df, idxs_swap
+    return df
 
 
 def shuffle_single_column(df, colname):
@@ -606,7 +607,7 @@ def zscore_grouped_cols(df, l_colnames_grouped_zscale, tf="z"):
     return df
 
 
-def load_sov_dataset(dataset_name, dataset_select):
+def load_sov_dataset(dataset_name, dataset_select, indep_vars="all_drop_culture"):
     """Load datasets based on the specified dataset name."""
     match dataset_name:
         case "risky":
@@ -619,7 +620,7 @@ def load_sov_dataset(dataset_name, dataset_select):
         case "itc":
             df, dict_info = load_itc_dataset(dataset_select=dataset_select)
         case "mm":
-            df, dict_info = load_mm_dataset(dataset_select=dataset_select)
+            df, dict_info = load_mm_dataset(dataset_select=dataset_select, indep_vars=indep_vars)
         case "2abd":
             df, dict_info = load_2abd_dataset()
     return df, dict_info
@@ -844,11 +845,12 @@ def load_mm_dataset_lazy(dataset_select="full"):
     return df_mm, dict_out
 
 
-def load_mm_dataset(dataset_select):
+def load_mm_dataset(dataset_select, indep_vars="all"):
     """Load and preprocess the Moral Machine dataset from Awad et al. (2018) Nature.
     Note that the full dataset is never loaded into memory, but we use polars and lazy dataframes
 
     :param dataset_select: Selects how to subset the full MM data set by Awad et al.
+    :param indep_vars: Selects whether all or only a subset of independent variables should be included in the analysis
 
     """
 
@@ -870,12 +872,14 @@ def load_mm_dataset(dataset_select):
         pl.col("UserID").is_not_null(),
     )
 
-    seq_lengths = np.array(["short_seq", "med_seq", "long_seq"])
+    seq_lengths = np.array(
+        ["short_seq", "med_seq", "long_seq", "culture_seq_1000", "culture_seq_3000"]
+    )
     idx_ntrials = np.where(seq_lengths == dataset_select)[0].item()
 
-    n_minimal = [21, 40, 65][idx_ntrials]
-    n_maximal = [24, 60, 130][idx_ntrials]
-    n_trials_train = [18, 38, 55][idx_ntrials]
+    n_minimal = [21, 40, 65, 40, 40][idx_ntrials] # use the default mm data select when modeling culture sequences of length 1000 and 10000
+    n_maximal = [24, 60, 130, 60, 60][idx_ntrials]
+    n_trials_train = [18, 38, 55, 900, 2700][idx_ntrials]
 
     df_scenario_pairs_small = participants_with_selected_number_of_trials(
         df, n_minimal, n_maximal
@@ -891,9 +895,12 @@ def load_mm_dataset(dataset_select):
 
     df_scenario_pairs_small_wide = pivot_mm(df_scenario_pairs_small)
 
-    df_mm, dict_colnames = rename_mm_cols(df_scenario_pairs_small_wide)
+    df_mm, dict_colnames = rename_mm_cols(df_scenario_pairs_small_wide, indep_vars=indep_vars)
 
     df_mm = recode_dummies(df_mm)
+
+    if dataset_select in ["culture_seq_1000", "culture_seq_3000"]:
+        df_mm = culture_id_as_subject_id(df_mm, dataset_select)
 
     logger.info("renamed columns")
 
@@ -913,6 +920,48 @@ def load_mm_dataset(dataset_select):
     }
 
     return df_mm, dict_out
+
+
+def culture_id_as_subject_id(df, dataset_select):
+    """for the culture_seq_1000 and culture_seq_3000 data select, 
+    use culture id as subject id to create longer (cultural) sequences
+    
+    note. the dataset is imbalanced with regards to country clusters
+    therefore, we throw out data from the Western and Southern cluster
+    to match the number of participants in the Eastern cluster, which has the fewest participants.
+    """
+
+
+    # balance dataset, because 77% Western, 16% southern, and only 7% Eastern in med data set
+    df_culture_sid = df[["sid", "country_cluster"]].drop_duplicates().sort_values(["country_cluster", "sid"])
+    df_culture_sid["sid_by_cluster"] = df_culture_sid.groupby(["country_cluster"]).cumcount() + 1
+    # take the max from the eastern cluster, and throw out everything above that max from the other clusters
+    max_eastern = df_culture_sid.query("country_cluster == 'Eastern'")["sid_by_cluster"].max()
+    df_culture_sid = df_culture_sid.query(f"""sid_by_cluster <= {max_eastern}""")
+    df = pd.merge(df, df_culture_sid.drop(columns=["country_cluster", "sid_by_cluster"]), how="inner", on="sid")
+
+    # create a new subject id based on the culture with the desired sequence length
+    seq_length = int(dataset_select.split("_")[-1])
+    df["cid"] = np.ceil(
+        (df.groupby(["country_cluster"]).cumcount() + 1) / seq_length
+    ).astype(int)
+    df_nseqs = df.groupby("country_cluster")["cid"].max().reset_index()
+    df_nseqs["nseq_cum"] = df_nseqs["cid"].cumsum().shift(1).fillna(0)
+    df = pd.merge(df, df_nseqs.drop(columns=["cid"]), how="left", on="country_cluster")
+    df["cid"] = df["cid"] + df["nseq_cum"]
+    # replace subject id with culture id
+    df["sid"] = df["cid"]
+    df["sid_unique"] = df["cid"]
+    # drop incomplete sequences (i.e., those with fewer than the desired sequence length)
+    df_full_sequences = (
+        df.groupby(["sid", "country_cluster"])["trial_id"]
+        .count()
+        .reset_index()
+        .query(f"""trial_id == {seq_length}""")
+        .drop(columns=["trial_id"])
+    )
+    df = pd.merge(df_full_sequences, df, how="inner", on=["sid", "country_cluster"])
+    return df
 
 
 def recode_dummies(df):
@@ -1115,7 +1164,7 @@ def rename_mm_cols_lazy(df):
     return df, dict_colnames
 
 
-def rename_mm_cols(df):
+def rename_mm_cols(df, indep_vars):
     # original column names in the dataset, and new column names that are consistent with the ITC and risky dataset
     colnames_old = [
         "UserID",
@@ -1221,7 +1270,25 @@ def rename_mm_cols(df):
     df = df.rename(columns=dict_map_cols)
     df["sid_unique"] = df["sid"]  # for consistency with itc
 
-    colnames_zscale = [
+    # only run model with old vs. middle age vs. young, and country cluster features to test for marginal effect
+    if indep_vars.startswith("few"):
+        cols_x = (
+            [
+                "left_oldman", "left_oldwoman", "right_oldman", "right_oldwoman", 
+                "left_boy", "left_girl", "right_boy", "right_girl",
+                "left_man", "left_woman", "right_man", "right_woman",
+                "Eastern", "Southern"
+                ]
+        ) 
+        colnames_zscale = ["left_oldman", "left_oldwoman", "right_oldman", "right_oldwoman"]
+    elif indep_vars.startswith("all"):
+        cols_x = (
+            [c for c in colnames_new if c not in ["sid", "sid_unique"]]
+            + ["left_default", "right_default"]
+            + ["PedPed"]
+            + ["Eastern", "Southern"]
+        )
+        colnames_zscale = [
         "left_crossingsignal",
         "left_numberofcharacters",
         "left_man",
@@ -1267,13 +1334,8 @@ def rename_mm_cols(df):
         "right_dog",
         "right_cat",
     ]
-
-    cols_x = (
-        [c for c in colnames_new if c not in ["sid", "sid_unique"]]
-        + ["left_default", "right_default"]
-        + ["PedPed"]
-        + ["Eastern", "Southern"]
-    )
+    if bool(re.search("no_culture", indep_vars)):
+        cols_x = [c for c in cols_x if c not in ["Eastern", "Southern"]]
     col_y = ["right_picked"]
     col_y_shifted = ["right_picked_prev"]
     col_pid = ["sid_unique"]

@@ -47,17 +47,29 @@ def parseargs():
         type=str,
         choices=[
             "",
+            "testing_size",
+            # risky dataset selects
             "repetitions",
             "no_repetitions",
-            "testing_size",
+            # itc dataset selects
             "full",
             "small",
             "medium",
+            # mm dataset selects
             "short_seq",
             "med_seq",
             "long_seq",
+            "culture_seq_1000",
+            "culture_seq_3000",
         ],
         help="Has a different meaning for the different datasets.",
+    )
+    aa(
+        "--indep_vars",
+        type=str,
+        default="all",
+        choices=["few_culture", "all_culture", "all_no_culture"],
+        help="only used for mm data: Which independent variables to include in the model. and whether culture should be dropped from indep vrs",
     )
     aa(
         "--condition_name",
@@ -156,6 +168,7 @@ def init_logger(log_file="train-itc.log", level=logging.INFO):
 def run(
     dataset_name,
     dataset_select,
+    indep_vars,
     condition_name,
     swap_colnames,
     shuffle_single_colnames,
@@ -197,7 +210,7 @@ def run(
             f"""logs/train-{dataset_name}_{dataset_select}/condition_{condition_name}/more_shuffle_{more_shuffle}-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log"""
         )
         save_dir = f"models/dataset_{dataset_name}/condition_{condition_name}/more_shuffle_{more_shuffle}/d_model={d_model}/d_ff={d_ff}/num_layers={num_layers}/masktype={masktype}/windowsize={windowsize}/"
-    elif dataset_name == "itc":
+    elif dataset_name in ["2abd", "itc"]:
         logger = init_logger(
             f"""logs/train-{dataset_name}/condition_{condition_name}/more_shuffle_{more_shuffle}-dmodel={d_model}-dff={d_ff}-numlayers={num_layers}.log"""
         )
@@ -211,7 +224,7 @@ def run(
 
     # ===================== Load Data =====================
 
-    df, dict_info = ut.load_sov_dataset(dataset_name, dataset_select)
+    df, dict_info = ut.load_sov_dataset(dataset_name, dataset_select, indep_vars=indep_vars)
     logger.info("loaded sov dataset")
 
     # ===================== Prepare Data =====================
@@ -243,8 +256,8 @@ def run(
     logger.info("created four conditions")
 
     batch_size = 32
-    num_epochs = 250  # 150 250
-    lr = 3e-4
+    num_epochs = 500  # 150 250
+    lr = 3e-4 #5e-4#1e-3## 1e-3 for 2abd, 3e-4 for all other datasets, 5e-4 for mm with few predictors
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -256,7 +269,7 @@ def run(
     else:
         n_participants_subset = dict_info["n_participants_total"]
 
-    wandb_name = f"""dataset={dataset_name}_{dataset_select}_condition={condition_name}_more_shuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info["n_trials_train"]}_masktype={masktype}_windowsize={windowsize}"""
+    wandb_name = f"""dataset={dataset_name}_{dataset_select}_indep_vars={indep_vars}_condition={condition_name}_more_shuffle={more_shuffle}_tf={tf}_dmodel={d_model}_dff={d_ff}_numlayers={num_layers}_ntrials_train={dict_info["n_trials_train"]}_masktype={masktype}_windowsize={windowsize}"""
     dataset_desc = f"{dataset_name}_{dataset_select}"
 
     run = wandb.init(
@@ -474,6 +487,7 @@ if __name__ == "__main__":
     run(
         dataset_name=args.dataset_name,
         dataset_select=args.dataset_select,
+        indep_vars=args.indep_vars,
         condition_name=args.condition_name,
         swap_colnames=args.swap_colnames,
         shuffle_single_colnames=args.shuffle_single_colnames,
