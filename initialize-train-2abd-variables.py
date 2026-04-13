@@ -11,14 +11,10 @@ import os
 base_dict = {
     "rnd_seed": 1,
     "python_file": "train.py",
-    "dataset_name": "mm",  # or "itc"
-    "indep_vars": "all_no_culture"
+    "dataset_name": "2abd",  # or "itc"
 }
-l_dataset_select = [
-    "med_seq",
-    #"long_seq",
-]  # NB short_seq includes most data bc more participants who completed fewer trials
-l_condition_names = ["original", "id_nohist", "shared_nohist", "shared_hist"]  # [,],
+l_dataset_select = [""]  # currently ignored for 2abd
+l_condition_names = ["original", "shared_nohist", "id_nohist", "shared_hist"]  # [,],
 
 
 # swap_colnames and shuffle_single_colnames are only needed when variables within a condition are shuffled
@@ -28,10 +24,11 @@ l_condition_names = ["original", "id_nohist", "shared_nohist", "shared_hist"]  #
 # for itc data:
 # swap_colnames = ['[[\"right_val\", \"left_val\"], [\"right_time\", \"left_time\"]]']
 # shuffle_single_colnames = ['[\"right_picked_prev\"]', '[]']
-swap_colnames_2 = [
-    "[[]]"
-]  # ,'[[\"right_val\", \"left_val\"]]', '[[\"right_time\", \"left_time\"]]'
+swap_colnames = ['[[\"right_m\", \"left_m\"], [\"right_v\", \"left_v\"]]']
+shuffle_single_colnames = ['[\"right_picked_prev\"]', '[]']
+swap_colnames_2 = ['[[\"right_m\", \"left_m\"]]', '[[\"right_v\", \"left_v\"]]', "[[]]"]  # [] #
 shuffle_single_colnames_2 = ["[]"]
+
 
 l_d_model = [8]
 l_d_ff = [16]
@@ -43,8 +40,23 @@ l_windowsize = [2]  # only relevant for windowed_causal, ignored when "causal" #
 
 # second part can be dropped when only generated data sets (i.e., four conditions) are used
 # Generate all combinations
+
+# second part can be dropped when only generated data sets (i.e., four conditions) are used
+# Generate all combinations
 combinations = list(
     chain(
+        product(
+            l_dataset_select,
+            l_condition_names,
+            swap_colnames,
+            shuffle_single_colnames,
+            l_d_model,
+            l_d_ff,
+            l_is_testcase,
+            l_num_layers,
+            l_masktype,
+            l_windowsize,
+        ),
         product(
             l_dataset_select,
             l_condition_names,
@@ -56,7 +68,7 @@ combinations = list(
             l_num_layers,
             l_masktype,
             l_windowsize,
-        )
+        ),
     )
 )
 
@@ -104,8 +116,6 @@ def run_command(args):
         args["dataset_name"],
         "--dataset_select",
         args["dataset_select"],
-        "--indep_vars",
-        args["indep_vars"],
         "--rnd_seed",
         str(args["rnd_seed"]),
         "--d_model",

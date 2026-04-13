@@ -15,11 +15,13 @@ base_dict = {
     "indep_vars": "all_no_culture"
 }
 l_dataset_select = [
-    "med_seq",
-    #"long_seq",
+    #"culture_seq_3000",
+    "culture_seq_1000",
 ]  # NB short_seq includes most data bc more participants who completed fewer trials
-l_condition_names = ["original", "id_nohist", "shared_nohist", "shared_hist"]  # [,],
-
+l_condition_names = [
+    "id_nohist",
+    "shared_nohist",
+]  # [,], no proper history available for culture sequences, because they are merged from different people
 
 # swap_colnames and shuffle_single_colnames are only needed when variables within a condition are shuffled
 # i.e., besides individual differences and trial history

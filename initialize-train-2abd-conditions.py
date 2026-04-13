@@ -14,7 +14,7 @@ base_dict = {
     "dataset_name": "2abd",  # or "itc"
 }
 l_dataset_select = [""]  # currently ignored for 2abd
-l_condition_names = ["original"]  # [,], "id_nohist", "shared_nohist", "shared_hist",
+l_condition_names = ["original", "id_nohist", "shared_nohist", "shared_hist"]  # [,],
 
 
 # swap_colnames and shuffle_single_colnames are only needed when variables within a condition are shuffled
@@ -114,7 +114,6 @@ def run_command(args):
         str(args["masktype"]),
         "--windowsize",
         str(args["windowsize"]),
-        str(args["windowsize"]),
         "--condition_name",
         args["condition_name"],
         "--swap_colnames",
@@ -126,37 +125,9 @@ def run_command(args):
 
 
 # serial
-for args in arg_combinations:
-    run_command(args)
+# for args in arg_combinations:
+#     run_command(args)
 
 # parallel
-# with ThreadPoolExecutor(max_workers=20) as executor:
-#     executor.map(run_command, arg_combinations)
-
-
-# best hyperparameters for itc data
-
-
-# best hyperparameters for risky no repetitions data
-# l_d_model = [32]
-# l_d_ff = [128]
-# l_is_testcase = ["False"]
-# l_num_layers = [1]
-# l_masktype = ["causal"] # "windowed_causal"
-# l_windowsize = [2]
-
-# best hyperparameters for risky peterson selected data
-# l_d_model = [32]
-# l_d_ff = [64]
-# l_is_testcase = ["False"]
-# l_num_layers = [2]
-# l_masktype = ["causal"] # "windowed_causal"
-# l_windowsize = [2]
-
-# best hyperparameters for risky peterson selected data with windowed causal mask
-# l_d_model = [32]
-# l_d_ff = [128]
-# l_is_testcase = ["False"]
-# l_num_layers = [1]
-# l_masktype = ["windowed_causal"] # "causal"
-# l_windowsize = [1, 2, 5, 10]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
+with ThreadPoolExecutor(max_workers=20) as executor:
+    executor.map(run_command, arg_combinations)
