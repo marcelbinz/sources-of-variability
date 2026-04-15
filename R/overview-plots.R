@@ -80,41 +80,7 @@ plt_masklength <- ggplot(tbl_plt_masklength, aes(name, accuracy)) +
 tbl_variables <- prep_tbl_variables(task_settings)
 
 
-plot_variables <- function(tbl_variables, cd, ivar, is_delta, ttl, max_y_delta = 0) {
-  plt <- tbl_variables %>% filter(Condition == cd) %>%
-    # order variables according to pred accuracy, and move "Nothing" to the end
-    arrange(desc({{ivar}})) %>%
-    mutate(
-      available = fct_inorder(available),
-      available = fct_relevel(available, "Nothing", after = 4)
-    ) %>%
-    ggplot(aes(available, {{ivar}}, group = available))
-  
-  if(!is_delta) {plt <- plt  + geom_hline(yintercept = .5, color = "red", linetype = "dotdash", alpha = .7, linewidth = 1)}
-  plt <- plt + geom_col(aes(fill = available)) +
-    #geom_errorbar(aes(ymin = {{ivar}} - 1.96 * se, ymax = {{ivar}} + 1.96 * se)) + # really invisible...
-    scale_fill_brewer(palette = "Set2", guide = "none") +
-    scale_color_brewer(palette = "Set2", guide = "none") +
-    scale_x_discrete() +
-    labs(y = "Test Accuracy", x = "Available Variables", title = ttl) +
-    theme_bw() +
-    theme(
-      axis.title = element_text(size = 14),
-      axis.text = element_text(size = 14),
-      strip.background = element_rect(fill = "white", color = "grey"),
-      strip.text = element_text(size = 14)
-    )
-  if (is_delta) {
-    plt <- plt + coord_cartesian(ylim = c(0, max_y_delta)) +
-      scale_y_continuous(breaks = seq(0, max_y_delta, by = .02), expand = expansion(mult = 0, add = c(0, .01))) +
-      labs(y = "ID - Shared")
-    # + labs(caption = "Note. T:Time, V:Value, R:Prev.Response")
-  } else {
-    plt <-  plt + coord_cartesian(ylim = c(0, 1)) +
-      scale_y_continuous(breaks = seq(0, 1, by = .1), expand = c(0, 0))
-  }
-  return(plt)
-}
+
 #tbl_variables %>% filter(Condition == "ID-History") %>%
 plt_shared_nohist <- plot_variables(tbl_variables, "Shared-NoHistory", mn_acc, FALSE, "Shared & No History")
 plt_id_hist <- plot_variables(tbl_variables, "ID-History", mn_acc, FALSE, "ID & History")

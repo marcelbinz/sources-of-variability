@@ -90,9 +90,9 @@ plot_four_conditions <- function(pth, ttl, task_settings){
     labs(y = "Test Accuracy", title = ttl) +
     theme_bw() +
     theme(
-      axis.title = element_text(size = 20),
+      axis.title = element_text(size = 16),
       axis.text = element_text(size = 14),
-      legend.text = element_text(size = 16),
+      legend.text = element_text(size = 14),
       legend.title = element_blank(),
       axis.title.x = element_blank(),
       legend.position = "inside",
@@ -164,8 +164,10 @@ prep_tbl_variables <- function(task_settings) {
   tbl_accuracy_long$available[tbl_accuracy_long$available == "v-m-picked_prev"] <- "m-v-picked_prev"
   
   tbl_accuracy_long$available <- factor(
-    tbl_accuracy_long$available, labels = task_settings$indep_vars_labels
+    tbl_accuracy_long$available, labels = task_settings$indep_vars_labels_incoming
   )
+  tbl_accuracy_long$available <- fct_relevel(tbl_accuracy_long$available, task_settings$indep_vars_labels_ordered)
+
   # plot and save
   
   tbl_accuracy_long <- tbl_accuracy_long %>% mutate(
@@ -267,3 +269,35 @@ prep_tbl_culture <- function(task_settings, pth_select, thxs_epochs) {
   return(tbl_conditions)
   
 }
+
+
+plot_variables <- function(tbl_variables, cd, ivar, is_delta, ttl, max_y_delta = 0, min_y_delta = 0) {
+  plt <- tbl_variables %>% filter(Condition == cd) %>%
+    ggplot(aes(available, {{ivar}}, group = available))
+  
+  if(!is_delta) {plt <- plt  + geom_hline(yintercept = .5, color = "red", linetype = "dotdash", alpha = .7, linewidth = 1)}
+  plt <- plt + geom_col(aes(fill = available)) +
+    #geom_errorbar(aes(ymin = {{ivar}} - 1.96 * se, ymax = {{ivar}} + 1.96 * se)) + # really invisible...
+    scale_fill_brewer(palette = "Set2", guide = "none") +
+    scale_color_brewer(palette = "Set2", guide = "none") +
+    scale_x_discrete() +
+    labs(y = "Test Accuracy", x = "Available Variables", title = ttl) +
+    theme_bw() +
+    theme(
+      axis.title = element_text(size = 16),
+      axis.text = element_text(size = 14),
+      strip.background = element_rect(fill = "white", color = "grey"),
+      strip.text = element_text(size = 14)
+    )
+  if (is_delta) {
+    plt <- plt + coord_cartesian(ylim = c(min_y_delta, max_y_delta)) +
+      scale_y_continuous(expand = expansion(mult = 0, add = c(.01, .01))) +
+      labs(y = "ID - Shared")
+    # + labs(caption = "Note. T:Time, V:Value, R:Prev.Response")
+  } else {
+    plt <-  plt + coord_cartesian(ylim = c(0, 1)) +
+      scale_y_continuous(breaks = seq(-1, 1, by = .1), expand = c(0, 0))
+  }
+  return(plt)
+}
+
