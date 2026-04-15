@@ -16,7 +16,7 @@ l_dataset_select = [
 ]  # NB short_seq includes most data bc more participants who completed fewer trials
 l_indep_vars = ["few_culture", "all_culture"] # "all" uses all indep vars, "few" only to test for age, culture and age x culture effect
 l_condition_names = [
-    #"id_nohist",
+    "id_nohist",
     "shared_nohist",
 ]  # [,], no proper history available for culture sequences, because they are merged from different people
 
