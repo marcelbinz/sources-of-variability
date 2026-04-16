@@ -5,14 +5,15 @@ library(DT)
 library(data.table)
 library(grid)
 library(gridExtra)
+library(htmltools)
 
 
 # Generate Data -----------------------------------------------------------
 
 
 v_ids <- seq(1, 2, by = 1)
-v_iv1 <- c(-.5, .5)
-v_iv2 <- v_iv1
+v_iv1 <- c(1, 2)
+v_iv2 <- c(3, 4)
 tbl_original <- crossing(SID = v_ids, V1 = v_iv1, V2 = v_iv2) %>%
   group_by(SID) %>%
   mutate(`Trial Nr.` = row_number()) %>%
@@ -27,7 +28,7 @@ tbl_original <- tbl_original %>%
   ) %>% group_by(SID) %>%
   mutate(y_add_sid = rnorm(n = 1, sd = 3)) %>%
   ungroup() %>%
-  mutate(y = round(y + y_add_sid, 2)) %>% select(-y_add_sid)
+  mutate(y = round(y + y_add_sid, 1)) %>% select(-y_add_sid)
 
 # shuffle trials within sid
 tbl_id_nohist <- tbl_original %>%
@@ -67,100 +68,225 @@ tbl_shared_nohist <- tbl_original %>%
 # once everything shuffled, no coloring
 # rename Trial Nr. Old -> Trial Nr. New vs. Trial Nr.
 
-colors <- RColorBrewer::brewer.pal(n = length(unique(tbl_original$SID)), "Set2")
+colors <- c(
+  RColorBrewer::brewer.pal(nrow(tbl_original)/2, "Reds"),
+  RColorBrewer::brewer.pal(nrow(tbl_original)/2, "Purples")
+)
 
 # original: color by subject
-tbl_original$color <- colors[as.numeric(tbl_original$SID)]
+tbl_original$color <- colors
 
-datatable(tbl_original, options = list(
-  columnDefs = list(
-    list(visible = FALSE, targets = ncol(tbl_original))  # hide last column
-  ), pageLength = 12,
-  rowCallback = JS(
-  "function(row, data) {
+my_formatting <- function(dt){
+  dt  %>%
+    formatStyle(
+      columns = names(tbl_original),
+      fontFamily = "Arial",
+      fontSize = "20px"
+    ) %>%
+    htmlwidgets::prependContent(
+      htmltools::tags$style(
+        htmltools::HTML("
+        table.dataTable thead th {
+          font-family: 'Arial';
+          font-size: 21px;
+          font-weight: 600;
+          border: 2px solid #333;   /* header border */
+          padding: 6px;             /* optional: makes it look cleaner */
+        }
+        table.dataTable td {
+          font-family: 'Arial';
+          font-size: 20px;
+        }
+        table.dataTable {
+          border-collapse: collapse;
+        }
+
+        /* Body cells: vertical lines */
+        table.dataTable tbody td {
+          font-family: 'Arial';
+          font-size: 16px;
+          border-right: 1px solid #aaa;
+        }
+
+        
+      ")
+      )
+    )
+}
+
+dt1.1 <- datatable(
+  tbl_original,
+  rownames = FALSE,
+  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
+  options = list(
+    paging = FALSE,
+    scrollY = FALSE,
+    autoHeight = TRUE,
+    info = FALSE,
+    searching = FALSE,
+    dom = 't',
+    columnDefs = list(
+      list(visible = FALSE, targets = ncol(tbl_original)-1)  # hide last column
+    ), pageLength = 12,
+    rowCallback = JS(
+      "function(row, data) {
      $('td', row).css('background-color', data[data.length - 1]);
    }"
-))) %>%
-  formatStyle(
-    columns = c("Trial Nr."),
-    border = "2px solid blue"
-  )
-
-# original: color by trial nr
-colors <- RColorBrewer::brewer.pal(n = length(unique(tbl_original$`Trial Nr.`)), "Set2")
-
-tbl_original <- tbl_original %>% arrange(`Trial Nr.`)
-tbl_original$color <- colors[as.numeric(tbl_original$`Trial Nr.`)]
-
-datatable(tbl_original, options = list(
-  columnDefs = list(
-    list(visible = FALSE, targets = ncol(tbl_original))  # hide last column
-  ), pageLength = 12,
-  rowCallback = JS(
-    "function(row, data) {
-     $('td', row).css('background-color', data[data.length - 1]);
-   }"
-  ))) %>%
-  formatStyle(
-    columns = c("SID"),
-    border = "2px solid blue"
-  )
+    )))%>% my_formatting()
 
 
 # id nohist
-colors <- RColorBrewer::brewer.pal(n = length(unique(tbl_id_nohist$SID)), "Set2")
-tbl_id_nohist$color <- colors[as.numeric(tbl_id_nohist$SID)]
+tbl_id_nohist <- tbl_id_nohist %>% left_join(tbl_original %>% select(SID, `Trial Nr.`, color), by = c("SID", "Trial Nr."))
 tbl_id_nohist <- tbl_id_nohist %>% 
-  relocate(`Trial Nr. New`, .after = SID)
+  select(-`Trial Nr. New`)
 
-datatable(tbl_id_nohist, options = list(
-  columnDefs = list(
-    list(visible = FALSE, targets = c(ncol(tbl_id_nohist)))  # hide last column
-  ), pageLength = 12,
-  rowCallback = JS(
-    "function(row, data) {
+dt1.2 <- datatable(
+  tbl_id_nohist, 
+  rownames = FALSE,
+  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
+  options = list(
+    paging = FALSE,
+    scrollY = FALSE,
+    autoHeight = TRUE,
+    info = FALSE,
+    searching = FALSE,
+    dom = 't',
+    columnDefs = list(
+      list(visible = FALSE, targets = c(ncol(tbl_id_nohist)-1))  # hide last column
+    ), pageLength = 12,
+    rowCallback = JS(
+      "function(row, data) {
      $('td', row).css('background-color', data[data.length - 1]);
    }"
-  ))) %>%
-  formatStyle(
-    columns = c("Trial Nr. New", "Trial Nr."),
-    border = "2px solid blue"
-  )
+    ))) %>%
+  my_formatting()
+
+
+
+tbl_original_preserve <- tbl_original
+tbl_original <- tbl_original %>% arrange(`Trial Nr.`)
+# original: color by trial nr
+colors <- c(
+  RColorBrewer::brewer.pal(nrow(tbl_original), "Reds")[c(3, 7)],
+  RColorBrewer::brewer.pal(nrow(tbl_original), "Purples")[c(3, 7)],
+  RColorBrewer::brewer.pal(nrow(tbl_original), "Greens")[c(3, 7)],
+  RColorBrewer::brewer.pal(nrow(tbl_original), "Greys")[c(3, 7)]
+)
+tbl_original$color <- colors
+
+dt2.1 <- datatable(
+  tbl_original, 
+  rownames = FALSE,
+  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
+  options = list(
+    paging = FALSE,
+    scrollY = FALSE,
+    autoHeight = TRUE,
+    info = FALSE,
+    searching = FALSE,
+    dom = 't',
+    columnDefs = list(
+      list(visible = FALSE, targets = ncol(tbl_original)-1)  # hide last column
+    ), pageLength = 12,
+    rowCallback = JS(
+      "function(row, data) {
+     $('td', row).css('background-color', data[data.length - 1]);
+   }"
+    ))) %>% my_formatting()
+
 
 
 # shared hist
-colors <- RColorBrewer::brewer.pal(n = length(unique(tbl_shared_hist$`Trial Nr.`)), "Set2")
-tbl_shared_hist$color <- colors[as.numeric(tbl_shared_hist$`Trial Nr.`)]
-tbl_shared_hist <- tbl_shared_hist %>% relocate(`SID New`, .before = `SID`) %>% arrange(`Trial Nr.`)
+tbl_shared_hist <- tbl_shared_hist %>% left_join(tbl_original %>% select(SID, `Trial Nr.`, color), by = c("SID", "Trial Nr."))
+tbl_shared_hist <- tbl_shared_hist %>% select(-`SID New`) %>% arrange(`Trial Nr.`)
 
-datatable(tbl_shared_hist, options = list(
-  columnDefs = list(
-    list(visible = FALSE, targets = c(ncol(tbl_shared_hist)))  # hide last column
-  ), pageLength = 12,
-  rowCallback = JS(
-    "function(row, data) {
+dt2.2 <- datatable(
+  tbl_shared_hist, 
+  rownames = FALSE,
+  colnames = c("ID", "Trial", "X1", "X2", "y", "color"), 
+  options = list(
+    paging = FALSE,
+    scrollY = FALSE,
+    autoHeight = TRUE,
+    info = FALSE,
+    searching = FALSE,
+    dom = 't',
+    columnDefs = list(
+      list(visible = FALSE, targets = c(ncol(tbl_shared_hist)-1))  # hide last column
+    ), pageLength = 12,
+    rowCallback = JS(
+      "function(row, data) {
      $('td', row).css('background-color', data[data.length - 1]);
    }"
-  ))) %>%
-  formatStyle(
-    columns = c("SID New", "SID"),
-    border = "2px solid blue"
-  )
+    ))) %>% my_formatting()
 
 
 # shared no hist
-colors <- RColorBrewer::brewer.pal(n = length(unique(tbl_shared_nohist$`SID`)), "Set2")
-tbl_shared_nohist$color <- colors[as.numeric(tbl_shared_nohist$`SID`)]
-
-datatable(tbl_shared_nohist, options = list(
-  columnDefs = list(
-    list(visible = FALSE, targets = c(ncol(tbl_shared_nohist)))  # hide last column
-  ), pageLength = 12,
-  rowCallback = JS(
-    "function(row, data) {
+tbl_shared_nohist <- tbl_shared_nohist %>% left_join(tbl_original_preserve %>% select(SID, `Trial Nr.`, color), by = c("SID", "Trial Nr."))
+tbl_shared_nohist <- tbl_shared_nohist %>% select(-c("SID New", "Trial Nr. New"))
+dtright <- datatable(
+  tbl_shared_nohist,
+  rownames = FALSE,
+  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
+  options = list(
+    paging = FALSE,
+    scrollY = FALSE,
+    autoHeight = TRUE,
+    info = FALSE,
+    searching = FALSE,
+    dom = 't',
+    columnDefs = list(
+      list(visible = FALSE, targets = c(ncol(tbl_shared_nohist)-1))  # hide last column
+    ), pageLength = 12,
+    rowCallback = JS(
+      "function(row, data) {
      $('td', row).css('background-color', data[data.length - 1]);
    }"
-  )))
+    ))) %>% my_formatting()
+
+
+
+htmltools::browsable(
+  tags$div(
+    style = "
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: auto auto;
+      column-gap: 40px;
+      row-gap: 0px;
+      align-items: start;
+    ",
+    
+    tags$div(
+      style = "grid-column: 1; grid-row: 1; height: 375px; width:350px",
+      dt1.1
+    ),
+    
+    tags$div(
+      style = "grid-column: 2; grid-row: 1; height: 375px; width:350px",
+      dt1.2
+    ),
+    
+    tags$div(
+      style = "grid-column: 1; grid-row: 2; height: 375px; width:350px",
+      dt2.1
+    ),
+    
+    tags$div(
+      style = "grid-column: 2; grid-row: 2; height: 375px; width:350px",
+      dt2.2
+    ),
+    
+    tags$div(
+      style = "
+        grid-column: 3;
+        grid-row: 1 / span 2;
+        align-self: center;
+        height: 375px; width:350px",
+      dtright
+    )
+  )
+)
 
 
 
@@ -220,25 +346,25 @@ plot_example_conditions <- function(my_tbl, ttl, plot_legend = FALSE) {
   idx_legend <- 1
   if (plot_legend) idx_legend <- 2
   ggplot(my_tbl, aes(History, y, group = ID)) +
-  geom_hline(yintercept = .5, linetype = "dotdash", linewidth = 1, color = "red", alpha = .3) +
-  geom_line((aes(color = ID)), position = pd) +
-  geom_point(color = "white", size = 5, position = pd) +
-  geom_point(aes(color = ID), size = 3, position = pd) +
-  scale_color_brewer(palette = "Set1") +
-  scale_y_continuous(expand = expansion(add = c(.02, 0))) +
-  labs(y = "Test Accuracy", x = element_blank(), title = ttl) +
-  theme_bw() +
-  theme(
-    axis.title = element_text(size = 14),
-    axis.text = element_text(size = 14),
-    legend.text = element_text(size = 14),
-    legend.title = element_blank(),
-    axis.title.x = element_blank(),
-    legend.position = c("omit", "inside")[idx_legend],
-    legend.position.inside = c(.3, .8),
-    title = element_text(size = 14)
-  ) +
-  coord_cartesian(ylim = c(.5, 1))
+    geom_hline(yintercept = .5, linetype = "dotdash", linewidth = 1, color = "red", alpha = .3) +
+    geom_line((aes(color = ID)), position = pd) +
+    geom_point(color = "white", size = 5, position = pd) +
+    geom_point(aes(color = ID), size = 3, position = pd) +
+    scale_color_brewer(palette = "Set1") +
+    scale_y_continuous(expand = expansion(add = c(.02, 0))) +
+    labs(y = "Test Accuracy", x = element_blank(), title = ttl) +
+    theme_bw() +
+    theme(
+      axis.title = element_text(size = 14),
+      axis.text = element_text(size = 14),
+      legend.text = element_text(size = 14),
+      legend.title = element_blank(),
+      axis.title.x = element_blank(),
+      legend.position = c("omit", "inside")[idx_legend],
+      legend.position.inside = c(.3, .8),
+      title = element_text(size = 14)
+    ) +
+    coord_cartesian(ylim = c(.5, 1))
 }
 
 
