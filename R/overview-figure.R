@@ -435,15 +435,10 @@ v_history <- factor(levels = c("Shuffled History", "Original History"), ordered 
 v_ID <- factor(levels = c("Shuffled ID", "Original ID"), ordered = TRUE)
 tbl_main_id <- crossing(History = v_history, ID = v_ID) %>%
   mutate(y = c(.7, .8, .7, .8))
-tbl_main_seq <- crossing(History = v_history, ID = v_ID) %>%
-  mutate(y = c(.7, .7, .8, .8))
 tbl_idio_seq <- crossing(History = v_history, ID = v_ID) %>%
   mutate(y = c(.7, .7, .7, .8))
 
-#plt_seq_only <- plot_example_conditions(tbl_main_seq, "Only Sequence Effect", plot_legend = TRUE)
 plt_id_only <- plot_example_conditions(tbl_main_id, "Individual Differences")
-plt_idio_seq <- plot_example_conditions(tbl_idio_seq, "Idiosyncratic Seq. Effect")
+plt_idio_seq <- plot_example_conditions(tbl_idio_seq, "Idiosyncratic Seq. Effect", plot_legend = TRUE)
 
 grid.draw(arrangeGrob(plt_id_only, plt_idio_seq, nrow = 1))
-
-

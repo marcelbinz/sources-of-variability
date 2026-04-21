@@ -33,6 +33,7 @@ task_settings <- switch(
   
   ### ITC ###
   "itc" = list(
+    task = task,
     pth_conditions = "wandb/wandb_export_itc_conditions.csv",
     pth_masklength = "wandb/wandb_export_itc_masklength.csv",
     pth_variables = "wandb/wandb_export_itc_variables.csv",
@@ -58,6 +59,7 @@ task_settings <- switch(
   
   ### RISKY ###
   "risky" = list(
+    task = task,
     pth_conditions = c(
       "wandb/wandb_export_risky_conditions_peterson-select.csv",
       "wandb/wandb_export_risky_conditions_only-first-problem.csv"
@@ -111,19 +113,21 @@ task_settings <- switch(
   
   ### MM ###
   "mm" = list(
+    task = task,
     pth_conditions = "wandb/wandb_export_mm_conditions.csv",
     pth_masklength = "wandb/wandb_export_mm_masklength.csv",
-    pth_variables = "wandb/wandb_export_mm_culture_age_small.csv",
+    pth_variables = "wandb/wandb_export_mm_variables.csv",
+    #pth_variables = "wandb/wandb_export_mm_culture_age_small.csv",
     pth_culture_age_small = "wandb/wandb_export_mm_culture_age_small.csv",
     pth_culture_age_small_shared = "wandb/wandb_export_mm_culture_age_small_shared.csv",
     pth_culture_age_small_id = "wandb/wandb_export_mm_culture_age_small_id.csv",
     epochthxs = c(201, 250),
     n_epochs = 50,
     indep_vars_labels_incoming = c(
-      "Nothing", "A", "C", "A&C"
+      "A", "A&C", "C", "Nothing"
     ),
     indep_vars_labels_ordered = c(
-      "Nothing", "A", "C", "A&C"
+      "A&C", "A", "C", "Nothing"
     ),
     pl_dir = "figures/mm-conditions.pdf",
     pl_dir_masklength = "figures/mm-masklength.pdf",
@@ -136,13 +140,14 @@ task_settings <- switch(
   
   ### 2ABD ###
   "2abd" = list(
+    task = task,
     pth_conditions = "wandb/wandb_export_2abd_conditions.csv",
     pth_masklength = "wandb/wandb_export_2abd_masklength.csv",
     pth_variables = "wandb/wandb_export_2abd_variables.csv",
-    epochthxs = c(201, 250),
+    epochthxs = c(201, 250),#c(201, 250),
     n_epochs = 50,
-    indep_vars_labels_incoming = c("V&R", "R", "Nothing", "M&V&R", "M&R"),
-    indep_vars_labels_ordered = c("M&V&R","M&R", "V&R", "R", "Nothing"),
+    indep_vars_labels_incoming = c("V&R","V", "R","Nothing","M&V&R","M&V", "M&R", "M"),
+    indep_vars_labels_ordered = c("M&V&R","M&V", "M&R","V&R","M", "V", "R","Nothing"),
     pl_dir = "figures/2abd-conditions.pdf",
     pl_dir_masklength = "figures/2abd-masklength.pdf",
     pl_dir_gains = "figures/2abd-gains.pdf",
@@ -242,57 +247,35 @@ dev.off()
 
 # Effect Decomposition ----------------------------------------------------
 
-# effect decomposition not available for MM dataset
-if (task != "mm") {
-  
-  tbl_variables <- prep_tbl_variables(task_settings)
-  
-  # avg no history / baseline plot
-  tbl_plt_gain_base <- subselect_conditions(tbl_variables, rep("No History", 2), c("Shared", "Shared"))
-  tbl_plt_gain_base$mn_acc_all <- tbl_plt_gain_base$mn_acc_ID[
-    tbl_plt_gain_base$available == "T&V&R" |
-      tbl_plt_gain_base$available == "P&V&R" |
-      tbl_plt_gain_base$available == "M&V&R"
-  ]
-  tbl_plt_gain_base$mn_acc_nothing <- tbl_plt_gain_base$mn_acc_ID[tbl_plt_gain_base$available == "Nothing"]
-  tbl_plt_gain_base$prop_all <- tbl_plt_gain_base$mn_acc_ID - tbl_plt_gain_base$mn_acc_nothing
-  
-  # three deltas to baseline
-  tbl_plt_gain_id <- subselect_conditions(tbl_variables, rep("No History", 2), c("ID", "Shared"))
-  tbl_plt_gain_hist <- subselect_conditions(tbl_variables, c("History", "No History"), rep("Shared", 2))
-  tbl_plt_gain_both <- subselect_conditions(tbl_variables, c("History", "No History"), c("ID", "Shared"))
-  
-  
-  plot_gain <- function(tbl_plt, ttl, ymax = .14) {
-    ggplot(tbl_plt, aes(available, delta_mn, group = available)) +
-      geom_col(aes(fill = available)) +
-      geom_label(aes(y = ifelse(delta_mn > 0, delta_mn - .005, delta_mn + .005), label = round(delta_mn, 3))) +
-      coord_cartesian(ylim = c(-0.01, ymax)) +
-      scale_x_discrete(labels = function(x) str_wrap(x, width = 8)) +
-      scale_fill_brewer(palette = "Set1", guide = "none") +
-      scale_y_continuous(breaks = c(0, .25, by = .05), minor_breaks = seq(-.02, ymax, by = .01)) +
-      labs(y = "Mean Difference", title = ttl) +
-      theme_bw() +
-      theme(
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 16),
-        axis.title.x = element_blank(),
-        title = element_text(size = 16),
-        strip.background = element_rect(fill = "white", color = "grey"),
-        strip.text = element_text(size = 12),
-        panel.grid.major.y = element_line(size = 1, colour = "grey80"), 
-        panel.grid.minor.y = element_line(size = 0.3, colour = "grey80")
-      )
-  }
-  
-  pl_gain_base <- ggplot(tbl_plt_gain_base, aes(available, prop_all, group = available)) +
+
+tbl_variables <- prep_tbl_variables(task_settings)
+
+# avg no history / baseline plot
+tbl_plt_gain_base <- subselect_conditions(tbl_variables, rep("No History", 2), c("Shared", "Shared"))
+tbl_plt_gain_base$mn_acc_all <- tbl_plt_gain_base$mn_acc_ID[
+  tbl_plt_gain_base$available == "T&V&R" |
+    tbl_plt_gain_base$available == "P&V&R" |
+    tbl_plt_gain_base$available == "M&V&R" |
+    tbl_plt_gain_base$available == "A&C"
+]
+tbl_plt_gain_base$mn_acc_nothing <- tbl_plt_gain_base$mn_acc_ID[tbl_plt_gain_base$available == "Nothing"]
+tbl_plt_gain_base$prop_all <- tbl_plt_gain_base$mn_acc_ID - tbl_plt_gain_base$mn_acc_nothing
+
+# three deltas to baseline
+tbl_plt_gain_id <- subselect_conditions(tbl_variables, rep("No History", 2), c("ID", "Shared"))
+tbl_plt_gain_hist <- subselect_conditions(tbl_variables, c("History", "No History"), rep("Shared", 2))
+tbl_plt_gain_both <- subselect_conditions(tbl_variables, c("History", "No History"), c("ID", "Shared"))
+
+
+plot_gain <- function(tbl_plt, ttl, ymax = .14) {
+  ggplot(tbl_plt, aes(available, delta_mn, group = available)) +
     geom_col(aes(fill = available)) +
-    geom_label(aes(y = prop_all + .05, label = round(prop_all, 3))) +
-    coord_cartesian(ylim = c(0, .5)) +
+    geom_label(aes(y = ifelse(delta_mn > 0, delta_mn - .005, delta_mn + .005), label = round(delta_mn, 3))) +
+    coord_cartesian(ylim = c(-0.01, ymax)) +
     scale_x_discrete(labels = function(x) str_wrap(x, width = 8)) +
     scale_fill_brewer(palette = "Set1", guide = "none") +
-    scale_y_continuous(breaks = seq(0, .5, by = .1), minor_breaks = seq(0, .5, by = .05)) +
-    labs(y = "Added Accuracy", title = "Baseline") +
+    scale_y_continuous(breaks = c(0, .25, by = .05), minor_breaks = seq(-.02, ymax, by = .01)) +
+    labs(y = "Mean Difference", title = ttl) +
     theme_bw() +
     theme(
       axis.title = element_text(size = 16),
@@ -304,113 +287,67 @@ if (task != "mm") {
       panel.grid.major.y = element_line(size = 1, colour = "grey80"), 
       panel.grid.minor.y = element_line(size = 0.3, colour = "grey80")
     )
-  
-  ymax <- ifelse(task == "2abd", .25, .14)
-  pl_id_gain <- plot_gain(tbl_plt_gain_id, "ID: Time Invariant", ymax)
-  pl_history_gain <- plot_gain(tbl_plt_gain_hist, "Shared History", ymax)
-  pl_both_gain <- plot_gain(tbl_plt_gain_both, "ID: Time-Based", ymax)
-  
-  
-  
-  pl_gains <- arrangeGrob(pl_id_gain, pl_history_gain, pl_both_gain, ncol = 3)
-  
-  pdf(file = task_settings$pl_dir_gains, 15, 4.5)
-  grid.draw(pl_gains)
-  dev.off()
-  
-  
-  ggplot(
-    tbl_variables %>% 
-      #filter(Condition == "Shared-NoHistory"),
-      filter(Condition == "ID-History"),
-    aes(available, mn_acc, group = available)
-  ) + 
-    geom_hline(yintercept = .5, color = "darkred", alpha = .5, size = 1.5, linetype = "dotdash") +
-    geom_col(aes(fill = available), width = .6) +
-    scale_fill_brewer(palette = "Set1", guide = "none") +
-    coord_cartesian(ylim = c(.5, 1)) +
-    scale_y_continuous(breaks = seq(.5, 1, by = .1), minor_breaks = seq(.5, 1, by = .05)) +
-    labs(y = "Test Accuracy") +
-    theme_bw() +
-    theme(
-      axis.title = element_text(size = 16),
-      axis.text = element_text(size = 16),
-      axis.title.x = element_blank(),
-      title = element_text(size = 16),
-      strip.background = element_rect(fill = "white", color = "grey"),
-      strip.text = element_text(size = 12),
-      panel.grid.major.y = element_line(size = 1, colour = "grey80"), 
-      panel.grid.minor.y = element_line(size = 0.3, colour = "grey80")
-    )
-  
-  pl_variables_original <- plot_variables(tbl_variables, cd = "ID-History", mn_acc, FALSE, "ID & History")
-  pl_variables_shared_nohistory <- plot_variables(tbl_variables, cd = "Shared-NoHistory", mn_acc, FALSE, "Shared & No History")
-  pl_delta <- plot_variables(
-    tbl_plt_gain_both %>% mutate(Condition = "compare"), 
-    "compare", delta_mn, TRUE, "Difference", 
-    max_y_delta = max(tbl_plt_gain_both$delta_mn),
-    min_y_delta = min(tbl_plt_gain_both$delta_mn)
-  )
-  
 }
 
-if (task == "mm") {
-  tbl_variables_shared <- prep_tbl_culture(task_settings, "pth_culture_age_small", c(451, 500))
-  tbl_variables_shared <- tbl_variables_shared %>%
-    mutate(
-      available = str_c(ifelse(Age == "Age", "A", ""), ifelse(Culture == "Culture", "C", "")),
-      available = ifelse(available == "", "Nothing", available),
-      available = ifelse(available == "AC", "A&C", available),
-      available = factor(available, levels = c("A&C", "A", "C", "Nothing"), ordered = TRUE),
-      ID = "Shared",
-      History = "No History",
-      Condition = "Shared",
-      shuffle = "dummy"
-    )
-  
-  # this has to be replaced by the proper data!
-  tbl_variables_id <- tbl_variables_shared %>% mutate(ID = "ID", Condition = "ID")
-  
-  pl_variables_shared_nohistory <- plot_variables(tbl_variables_shared, "Shared", mn_acc, FALSE, "Shared")
-  pl_variables_original <- plot_variables(tbl_variables_id, "ID", mn_acc, FALSE, "ID")
-  tbl_variables <- bind_rows(tbl_variables_shared, tbl_variables_id)
-  tbl_plt_gain_both <- subselect_conditions(tbl_variables, c("No History", "No History"), c("ID", "Shared")) %>%
-    mutate(Condition = "compare")
-  
-  pl_delta <- plot_variables(
-    tbl_plt_gain_both, cd = "compare", delta_mn, TRUE, "Difference", 
-    max_y_delta = max(tbl_plt_gain_both$delta_mn),
-    min_y_delta = min(tbl_plt_gain_both$delta_mn)
+pl_gain_base <- ggplot(tbl_plt_gain_base, aes(available, prop_all, group = available)) +
+  geom_col(aes(fill = available)) +
+  geom_label(aes(y = prop_all + .05, label = round(prop_all, 3))) +
+  coord_cartesian(ylim = c(0, .5)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 8)) +
+  scale_fill_brewer(palette = "Set1", guide = "none") +
+  scale_y_continuous(breaks = seq(0, .5, by = .1), minor_breaks = seq(0, .5, by = .05)) +
+  labs(y = "Added Accuracy", title = "Baseline") +
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 16),
+    axis.title.x = element_blank(),
+    title = element_text(size = 16),
+    strip.background = element_rect(fill = "white", color = "grey"),
+    strip.text = element_text(size = 12),
+    panel.grid.major.y = element_line(size = 1, colour = "grey80"), 
+    panel.grid.minor.y = element_line(size = 0.3, colour = "grey80")
   )
-  
-}
+
+ymax <- ifelse(task == "2abd", .25, .14)
+pl_id_gain <- plot_gain(tbl_plt_gain_id, "ID: Time Invariant", ymax)
+pl_history_gain <- plot_gain(tbl_plt_gain_hist, "Shared History", ymax)
+pl_both_gain <- plot_gain(tbl_plt_gain_both, "ID: Time-Based", ymax)
+
+pl_gains <- arrangeGrob(pl_id_gain, pl_history_gain, pl_both_gain, ncol = 3)
+
+pdf(file = task_settings$pl_dir_gains, 15, 4.5)
+grid.draw(pl_gains)
+dev.off()
+
+pl_variables_original <- plot_variables(tbl_variables, cd = "ID-History", mn_acc, FALSE, "ID & History")
+pl_variables_shared_nohistory <- plot_variables(tbl_variables, cd = "Shared-NoHistory", mn_acc, FALSE, "Shared & No History")
+pl_delta <- plot_variables(
+  tbl_plt_gain_both %>% mutate(Condition = "compare"), 
+  "compare", delta_mn, TRUE, "Difference", 
+  max_y_delta = max(tbl_plt_gain_both$delta_mn),
+  min_y_delta = min(tbl_plt_gain_both$delta_mn)
+)
 
 
-# Joint Plot --------------------------------------------------------------
+# Joint Plot 1 ------------------------------------------------------------
 
+pdf(file = task_settings$pl_dir_joint, 16.5, 8)
+grid.draw(arrangeGrob(
+  arrangeGrob(pl_conditions, pl_masklength, pl_gain_base, nrow = 1, widths = c(.25, .45, .3)),
+  pl_gains,
+  nrow = 2
+))
+dev.off()
 
-if (task != "mm"){
-  pdf(file = task_settings$pl_dir_joint, 16.5, 8)
-  grid.draw(arrangeGrob(
-    arrangeGrob(pl_conditions, pl_masklength, pl_gain_base, nrow = 1, widths = c(.25, .45, .3)),
-    pl_gains,
-    nrow = 2
-  ))
-  dev.off()
-} else {
-  pdf(file = task_settings$pl_dir_joint, 11, 4)
-  grid.draw(
-    arrangeGrob(pl_conditions, pl_masklength,nrow = 1, widths = c(.35, .65)),
-  )
-  dev.off()
-}
 
 
 # Joint Plot 2 ------------------------------------------------------------
+
 pdf(file = task_settings$pl_dir_joint2, 12, 6)
 grid.draw(arrangeGrob(
   arrangeGrob(pl_conditions, pl_masklength, nrow = 1, widths = c(.35, .65)),
-  arrangeGrob(pl_variables_shared_nohistory, pl_variables_original, pl_delta, nrow = 1),
+  arrangeGrob(pl_variables_shared_nohistory, pl_variables_original, nrow = 1),
   nrow = 2
 ))
 dev.off()

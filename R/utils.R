@@ -147,7 +147,7 @@ prep_tbl_variables <- function(task_settings) {
     pivot_longer(-epoch) %>%
     mutate(
       Condition = str_match(name, "condition=([a-z_]*)_[md]")[,2],
-      shuffle = str_match(name, "more_shuffle=([a-z_/-]*)_tf")[,2]
+      shuffle = str_match(name, "more_shuffle=([A-Za-z_/-]*)_tf")[,2]
     )
   
   tbl_accuracy_long$Condition <- factor(
@@ -163,11 +163,24 @@ prep_tbl_variables <- function(task_settings) {
   tbl_accuracy_long$available[tbl_accuracy_long$available == "v-m"] <- "m-v"
   tbl_accuracy_long$available[tbl_accuracy_long$available == "v-m-picked_prev"] <- "m-v-picked_prev"
   
+  if (task_settings$task == "mm") {
+    tbl_accuracy_long$available[
+      str_detect(tbl_accuracy_long$available, "^(?=.*Eastern)(?=.*woman).*")
+    ] <- "Nothing"
+    tbl_accuracy_long$available[
+      str_detect(tbl_accuracy_long$available, "^(?=.*Eastern)(?!.*woman).*")
+    ] <- "A"
+    tbl_accuracy_long$available[
+      str_detect(tbl_accuracy_long$available, "^(?!.*Eastern)(?=.*woman).*")
+    ] <- "C"
+    tbl_accuracy_long$available[tbl_accuracy_long$available == "nothing"] <- "A&C"
+  }
+  
   tbl_accuracy_long$available <- factor(
     tbl_accuracy_long$available, labels = task_settings$indep_vars_labels_incoming
   )
   tbl_accuracy_long$available <- fct_relevel(tbl_accuracy_long$available, task_settings$indep_vars_labels_ordered)
-
+  
   # plot and save
   
   tbl_accuracy_long <- tbl_accuracy_long %>% mutate(
