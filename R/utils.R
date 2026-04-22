@@ -167,15 +167,27 @@ prep_tbl_variables <- function(task_settings) {
   
   if (task_settings$task == "mm") {
     tbl_accuracy_long$available[
-      str_detect(tbl_accuracy_long$available, "^(?=.*Eastern)(?=.*woman).*")
+      str_detect(tbl_accuracy_long$available, "^(?=.*Eastern)(?=.*woman)(?=.*picked_prev).*")
     ] <- "Nothing"
     tbl_accuracy_long$available[
-      str_detect(tbl_accuracy_long$available, "^(?=.*Eastern)(?!.*woman).*")
+      str_detect(tbl_accuracy_long$available, "^(?=.*Eastern)(?=.*woman)(?!.*picked_prev).*")
+    ] <- "R"
+    tbl_accuracy_long$available[
+      str_detect(tbl_accuracy_long$available, "^(?=.*Eastern)(?!.*woman)(?=.*picked_prev).*")
     ] <- "A"
     tbl_accuracy_long$available[
-      str_detect(tbl_accuracy_long$available, "^(?!.*Eastern)(?=.*woman).*")
+      str_detect(tbl_accuracy_long$available, "^(?!.*Eastern)(?=.*woman)(?=.*picked_prev).*")
     ] <- "C"
-    tbl_accuracy_long$available[tbl_accuracy_long$available == "nothing"] <- "A&C"
+    tbl_accuracy_long$available[
+      str_detect(tbl_accuracy_long$available, "^(?=.*Eastern)(?!.*woman)(?!.*picked_prev).*")
+    ] <- "A&R"
+    tbl_accuracy_long$available[
+      str_detect(tbl_accuracy_long$available, "^(?!.*Eastern)(?=.*woman)(?!.*picked_prev).*")
+    ] <- "C&R"
+    tbl_accuracy_long$available[
+      str_detect(tbl_accuracy_long$available, "^(?!.*Eastern)(?!.*woman)(?=.*picked_prev).*")
+    ] <- "A&C"
+    tbl_accuracy_long$available[tbl_accuracy_long$available == "nothing"] <- "A&C&R"
   }
   
   tbl_accuracy_long$available <- factor(

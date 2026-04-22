@@ -22,7 +22,7 @@ if (!dir.exists("figures")) {dir.create("figures")}
 ## note. data_select only required for risky data set, not itc
 
 
-task <- c("itc", "risky", "mm", "2abd")[4]
+task <- c("itc", "risky", "mm", "2abd")[3]
 if (task == "risky"){
   data_select = 1 # 1 or 2: 1 includes problem repetitions, 2 excludes them
 }
@@ -124,10 +124,10 @@ task_settings <- switch(
     epochthxs = c(201, 250),
     n_epochs = 50,
     indep_vars_labels_incoming = c(
-      "A", "A&C", "C", "Nothing"
+      "A", "A&C", "A&C&R", "A&R", "C", "C&R", "Nothing", "R"
     ),
     indep_vars_labels_ordered = c(
-      "A&C", "A", "C", "Nothing"
+      "A&C&R", "A&C", "A&R", "C&R", "A", "C", "R","Nothing"
     ),
     pl_dir = "figures/mm-conditions.pdf",
     pl_dir_masklength = "figures/mm-masklength.pdf",
@@ -256,7 +256,7 @@ tbl_plt_gain_base$mn_acc_all <- tbl_plt_gain_base$mn_acc_ID[
   tbl_plt_gain_base$available == "T&V&R" |
     tbl_plt_gain_base$available == "P&V&R" |
     tbl_plt_gain_base$available == "M&V&R" |
-    tbl_plt_gain_base$available == "A&C"
+    tbl_plt_gain_base$available == "A&C&R"
 ]
 tbl_plt_gain_base$mn_acc_nothing <- tbl_plt_gain_base$mn_acc_ID[tbl_plt_gain_base$available == "Nothing"]
 tbl_plt_gain_base$prop_all <- tbl_plt_gain_base$mn_acc_ID - tbl_plt_gain_base$mn_acc_nothing
