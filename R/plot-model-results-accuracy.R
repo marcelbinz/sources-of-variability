@@ -22,7 +22,7 @@ if (!dir.exists("figures")) {dir.create("figures")}
 ## note. data_select only required for risky data set, not itc
 
 
-task <- c("itc", "risky", "mm", "2abd")[3]
+task <- c("itc", "risky", "mm", "2abd")[4]
 if (task == "risky"){
   data_select = 1 # 1 or 2: 1 includes problem repetitions, 2 excludes them
 }
@@ -40,12 +40,12 @@ task_settings <- switch(
     epochthxs = c(201, 250),
     n_epochs = 50,
     indep_vars_labels_incoming = c(
-      "T&V&R", "V&R",
-      "T&R", "R", "Nothing"
+      "T&V&R", "T&V", "V&R", "V",
+      "T&R", "T", "R", "Nothing"
     ),
     indep_vars_labels_ordered = c(
-      "T&V&R", "V&R",
-      "T&R", "R", "Nothing"
+      "T&V&R", "T&V", "V&R", "T&R",
+      "T", "V", "R", "Nothing"
     ),
     pl_dir = "figures/itc-conditions.pdf",
     pl_dir_masklength = "figures/itc-masklength.pdf",
@@ -225,7 +225,7 @@ pl_masklength <- ggplot(tbl_plt_masklength, aes(name, accuracy)) +
   geom_label(aes(y = accuracy - .05, label = round(accuracy, 3))) +
   theme_bw() +
   scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-  scale_y_continuous(expand = c(0.01, 0)) +
+  scale_y_continuous(expand = expansion(add = c(0.02, 0))) +
   labs(x = "Size of Window", y = "Test Accuracy") +
   theme(
     axis.title = element_text(size = 16),
@@ -261,33 +261,6 @@ tbl_plt_gain_base$mn_acc_all <- tbl_plt_gain_base$mn_acc_ID[
 tbl_plt_gain_base$mn_acc_nothing <- tbl_plt_gain_base$mn_acc_ID[tbl_plt_gain_base$available == "Nothing"]
 tbl_plt_gain_base$prop_all <- tbl_plt_gain_base$mn_acc_ID - tbl_plt_gain_base$mn_acc_nothing
 
-# three deltas to baseline
-tbl_plt_gain_id <- subselect_conditions(tbl_variables, rep("No History", 2), c("ID", "Shared"))
-tbl_plt_gain_hist <- subselect_conditions(tbl_variables, c("History", "No History"), rep("Shared", 2))
-tbl_plt_gain_both <- subselect_conditions(tbl_variables, c("History", "No History"), c("ID", "Shared"))
-
-
-plot_gain <- function(tbl_plt, ttl, ymax = .14) {
-  ggplot(tbl_plt, aes(available, delta_mn, group = available)) +
-    geom_col(aes(fill = available)) +
-    geom_label(aes(y = ifelse(delta_mn > 0, delta_mn - .005, delta_mn + .005), label = round(delta_mn, 3))) +
-    coord_cartesian(ylim = c(-0.01, ymax)) +
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 8)) +
-    scale_fill_brewer(palette = "Set1", guide = "none") +
-    scale_y_continuous(breaks = c(0, .25, by = .05), minor_breaks = seq(-.02, ymax, by = .01)) +
-    labs(y = "Mean Difference", title = ttl) +
-    theme_bw() +
-    theme(
-      axis.title = element_text(size = 16),
-      axis.text = element_text(size = 16),
-      axis.title.x = element_blank(),
-      title = element_text(size = 16),
-      strip.background = element_rect(fill = "white", color = "grey"),
-      strip.text = element_text(size = 12),
-      panel.grid.major.y = element_line(size = 1, colour = "grey80"), 
-      panel.grid.minor.y = element_line(size = 0.3, colour = "grey80")
-    )
-}
 
 pl_gain_base <- ggplot(tbl_plt_gain_base, aes(available, prop_all, group = available)) +
   geom_col(aes(fill = available)) +
@@ -308,6 +281,12 @@ pl_gain_base <- ggplot(tbl_plt_gain_base, aes(available, prop_all, group = avail
     panel.grid.major.y = element_line(size = 1, colour = "grey80"), 
     panel.grid.minor.y = element_line(size = 0.3, colour = "grey80")
   )
+
+# three deltas to baseline
+tbl_plt_gain_id <- subselect_conditions(tbl_variables, rep("No History", 2), c("ID", "Shared"))
+tbl_plt_gain_hist <- subselect_conditions(tbl_variables, c("History", "No History"), rep("Shared", 2))
+tbl_plt_gain_both <- subselect_conditions(tbl_variables, c("History", "No History"), c("ID", "Shared"))
+
 
 ymax <- ifelse(task == "2abd", .25, .14)
 pl_id_gain <- plot_gain(tbl_plt_gain_id, "ID: Time Invariant", ymax)

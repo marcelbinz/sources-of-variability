@@ -87,7 +87,7 @@ plot_four_conditions <- function(pth, ttl, task_settings){
     geom_point(aes(color = ID), size = 3) +
     scale_color_brewer(palette = "Set1") +
     scale_y_continuous(expand = expansion(add = c(.02, 0))) +
-    labs(y = "Test Accuracy", title = ttl) +
+    labs(y = "Test Accuracy") +
     theme_bw() +
     theme(
       axis.title = element_text(size = 16),
@@ -158,10 +158,12 @@ prep_tbl_variables <- function(task_settings) {
   
   tbl_accuracy_long$available <- tbl_accuracy_long$shuffle
   tbl_accuracy_long$available[tbl_accuracy_long$available == "time-val"] <- "val-time"
+  tbl_accuracy_long$available[tbl_accuracy_long$available == "time-val-picked_prev"] <- "val-time-picked_prev"
   tbl_accuracy_long$available[tbl_accuracy_long$available == "prob-val-picked_prev"] <- "val-prob-picked_prev"
   tbl_accuracy_long$available[tbl_accuracy_long$available == "prob-val"] <- "val-prob"
   tbl_accuracy_long$available[tbl_accuracy_long$available == "v-m"] <- "m-v"
   tbl_accuracy_long$available[tbl_accuracy_long$available == "v-m-picked_prev"] <- "m-v-picked_prev"
+  
   
   if (task_settings$task == "mm") {
     tbl_accuracy_long$available[
@@ -289,7 +291,7 @@ plot_variables <- function(tbl_variables, cd, ivar, is_delta, ttl, max_y_delta =
     ggplot(aes(available, {{ivar}}, group = available))
   
   if(!is_delta) {plt <- plt  + geom_hline(yintercept = .5, color = "red", linetype = "dotdash", alpha = .7, linewidth = 1)}
-  plt <- plt + geom_col(aes(fill = available)) +
+  plt <- plt + geom_col(aes(fill = available), width = .75) +
     #geom_errorbar(aes(ymin = {{ivar}} - 1.96 * se, ymax = {{ivar}} + 1.96 * se)) + # really invisible...
     scale_fill_brewer(palette = "Set2", guide = "none") +
     scale_color_brewer(palette = "Set2", guide = "none") +
@@ -308,9 +310,32 @@ plot_variables <- function(tbl_variables, cd, ivar, is_delta, ttl, max_y_delta =
       labs(y = "ID - Shared")
     # + labs(caption = "Note. T:Time, V:Value, R:Prev.Response")
   } else {
-    plt <-  plt + coord_cartesian(ylim = c(0, 1)) +
-      scale_y_continuous(breaks = seq(-1, 1, by = .1), expand = c(0, 0))
+    plt <-  plt + coord_cartesian(ylim = c(.475, 1)) +
+      scale_y_continuous(breaks = seq(-1, 1, by = .1), expand = expansion(mult = 0, add = c(.02, 0)))
   }
   return(plt)
 }
+
+plot_gain <- function(tbl_plt, ttl, ymax = .14) {
+  ggplot(tbl_plt, aes(available, delta_mn, group = available)) +
+    geom_col(aes(fill = available)) +
+    geom_label(aes(y = ifelse(delta_mn > 0, delta_mn - .005, delta_mn + .005), label = round(delta_mn, 3))) +
+    coord_cartesian(ylim = c(-0.01, ymax)) +
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 8)) +
+    scale_fill_brewer(palette = "Set1", guide = "none") +
+    scale_y_continuous(breaks = c(0, .25, by = .05), minor_breaks = seq(-.02, ymax, by = .01)) +
+    labs(y = "Mean Difference", title = ttl) +
+    theme_bw() +
+    theme(
+      axis.title = element_text(size = 16),
+      axis.text = element_text(size = 16),
+      axis.title.x = element_blank(),
+      title = element_text(size = 16),
+      strip.background = element_rect(fill = "white", color = "grey"),
+      strip.text = element_text(size = 12),
+      panel.grid.major.y = element_line(size = 1, colour = "grey80"), 
+      panel.grid.minor.y = element_line(size = 0.3, colour = "grey80")
+    )
+}
+
 
