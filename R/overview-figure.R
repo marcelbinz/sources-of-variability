@@ -21,7 +21,7 @@ tbl_original <- crossing(SID = v_ids, V1 = v_iv1, V2 = v_iv2) %>%
 
 # y driven by IVs, learning over trials plus random by-subject intercept
 # no measurement noise
-set.seed(1234)
+set.seed(123)
 tbl_original <- tbl_original %>%
   mutate(
     y = 5 + V1*1.5 + V2*0.5 + `Trial Nr.`*.05
@@ -37,6 +37,7 @@ tbl_id_nohist <- tbl_original %>%
   ungroup()
 
 # shuffle sids within trial
+set.seed(88973)
 tbl_shared_hist <- tbl_original %>%
   group_by(`Trial Nr.`) %>% slice_sample(prop = 1) %>%
   mutate(`SID New` = row_number()) %>%
@@ -79,23 +80,23 @@ tbl_original$color <- colors
 my_formatting <- function(dt){
   dt  %>%
     formatStyle(
-      columns = names(tbl_original),
+      columns = c("SID", "V1", "V2", "color"),
       fontFamily = "Arial",
-      fontSize = "20px"
+      fontSize = "18px"
     ) %>%
     htmlwidgets::prependContent(
       htmltools::tags$style(
         htmltools::HTML("
         table.dataTable thead th {
           font-family: 'Arial';
-          font-size: 21px;
+          font-size: 18px;
           font-weight: 600;
           border: 2px solid #333;   /* header border */
           padding: 6px;             /* optional: makes it look cleaner */
         }
         table.dataTable td {
           font-family: 'Arial';
-          font-size: 20px;
+          font-size: 16px;
         }
         table.dataTable {
           border-collapse: collapse;
@@ -104,8 +105,17 @@ my_formatting <- function(dt){
         /* Body cells: vertical lines */
         table.dataTable tbody td {
           font-family: 'Arial';
-          font-size: 16px;
+          font-size: 14px;
+          padding-top: 6px !important;
+          padding-bottom: 6px !important;
+          line-height: 14px;
           border-right: 1px solid #aaa;
+        }
+        
+        /* center the first col */
+        table.dataTable tbody td:nth-child(1),
+        table.dataTable thead th:nth-child(1){
+          text-align: center !important;
         }
 
         
@@ -114,10 +124,10 @@ my_formatting <- function(dt){
     )
 }
 
-dt1.1 <- datatable(
-  tbl_original,
+dt2.1 <- datatable(
+  tbl_original %>% select(-c("Trial Nr.", "y")) %>% mutate(SID = ""),
   rownames = FALSE,
-  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
+  colnames = c("ID", "x left", "x right", "color"),
   options = list(
     paging = FALSE,
     scrollY = FALSE,
@@ -126,7 +136,7 @@ dt1.1 <- datatable(
     searching = FALSE,
     dom = 't',
     columnDefs = list(
-      list(visible = FALSE, targets = ncol(tbl_original)-1)  # hide last column
+      list(visible = FALSE, targets = ncol(tbl_original)-3)  # hide last column
     ), pageLength = 12,
     rowCallback = JS(
       "function(row, data) {
@@ -141,9 +151,9 @@ tbl_id_nohist <- tbl_id_nohist %>%
   select(-`Trial Nr. New`)
 
 dt1.2 <- datatable(
-  tbl_id_nohist, 
+  tbl_id_nohist %>% select(-c("Trial Nr.", "y")) %>% mutate(SID = ""), 
   rownames = FALSE,
-  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
+  colnames = c("ID", "x left", "x right", "color"),
   options = list(
     paging = FALSE,
     scrollY = FALSE,
@@ -152,7 +162,7 @@ dt1.2 <- datatable(
     searching = FALSE,
     dom = 't',
     columnDefs = list(
-      list(visible = FALSE, targets = c(ncol(tbl_id_nohist)-1))  # hide last column
+      list(visible = FALSE, targets = c(ncol(tbl_id_nohist)-3))  # hide last column
     ), pageLength = 12,
     rowCallback = JS(
       "function(row, data) {
@@ -166,44 +176,22 @@ dt1.2 <- datatable(
 tbl_original_preserve <- tbl_original
 tbl_original <- tbl_original %>% arrange(`Trial Nr.`)
 # original: color by trial nr
-colors <- c(
-  RColorBrewer::brewer.pal(nrow(tbl_original), "Reds")[c(3, 7)],
-  RColorBrewer::brewer.pal(nrow(tbl_original), "Purples")[c(3, 7)],
-  RColorBrewer::brewer.pal(nrow(tbl_original), "Greens")[c(3, 7)],
-  RColorBrewer::brewer.pal(nrow(tbl_original), "Greys")[c(3, 7)]
-)
-tbl_original$color <- colors
-
-dt2.1 <- datatable(
-  tbl_original, 
-  rownames = FALSE,
-  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
-  options = list(
-    paging = FALSE,
-    scrollY = FALSE,
-    autoHeight = TRUE,
-    info = FALSE,
-    searching = FALSE,
-    dom = 't',
-    columnDefs = list(
-      list(visible = FALSE, targets = ncol(tbl_original)-1)  # hide last column
-    ), pageLength = 12,
-    rowCallback = JS(
-      "function(row, data) {
-     $('td', row).css('background-color', data[data.length - 1]);
-   }"
-    ))) %>% my_formatting()
-
-
+# colors <- c(
+#   RColorBrewer::brewer.pal(nrow(tbl_original), "Reds")[c(3, 7)],
+#   RColorBrewer::brewer.pal(nrow(tbl_original), "Purples")[c(3, 7)],
+#   RColorBrewer::brewer.pal(nrow(tbl_original), "Greens")[c(3, 7)],
+#   RColorBrewer::brewer.pal(nrow(tbl_original), "Greys")[c(3, 7)]
+# )
+# tbl_original$color <- colors
 
 # shared hist
 tbl_shared_hist <- tbl_shared_hist %>% left_join(tbl_original %>% select(SID, `Trial Nr.`, color), by = c("SID", "Trial Nr."))
-tbl_shared_hist <- tbl_shared_hist %>% select(-`SID New`) %>% arrange(`Trial Nr.`)
+tbl_shared_hist <- tbl_shared_hist %>% select(-`SID New`)# %>% arrange(`Trial Nr.`)
 
 dt2.2 <- datatable(
-  tbl_shared_hist, 
+  tbl_shared_hist %>% select(-c("Trial Nr.", "y")) %>% mutate(SID = ""), 
   rownames = FALSE,
-  colnames = c("ID", "Trial", "X1", "X2", "y", "color"), 
+  colnames = c("ID", "x left", "x right", "color"), 
   options = list(
     paging = FALSE,
     scrollY = FALSE,
@@ -212,7 +200,7 @@ dt2.2 <- datatable(
     searching = FALSE,
     dom = 't',
     columnDefs = list(
-      list(visible = FALSE, targets = c(ncol(tbl_shared_hist)-1))  # hide last column
+      list(visible = FALSE, targets = c(ncol(tbl_shared_hist)-3))  # hide last column
     ), pageLength = 12,
     rowCallback = JS(
       "function(row, data) {
@@ -224,10 +212,10 @@ dt2.2 <- datatable(
 # shared no hist
 tbl_shared_nohist <- tbl_shared_nohist %>% left_join(tbl_original_preserve %>% select(SID, `Trial Nr.`, color), by = c("SID", "Trial Nr."))
 tbl_shared_nohist <- tbl_shared_nohist %>% select(-c("SID New", "Trial Nr. New"))
-dtright <- datatable(
-  tbl_shared_nohist,
+dt3.2 <- datatable(
+  tbl_shared_nohist  %>% select(-c("Trial Nr.", "y")) %>% mutate(SID = ""),
   rownames = FALSE,
-  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
+  colnames = c("ID", "x left", "x right", "color"),
   options = list(
     paging = FALSE,
     scrollY = FALSE,
@@ -236,7 +224,7 @@ dtright <- datatable(
     searching = FALSE,
     dom = 't',
     columnDefs = list(
-      list(visible = FALSE, targets = c(ncol(tbl_shared_nohist)-1))  # hide last column
+      list(visible = FALSE, targets = c(ncol(tbl_shared_nohist)-3))  # hide last column
     ), pageLength = 12,
     rowCallback = JS(
       "function(row, data) {
@@ -250,40 +238,35 @@ htmltools::browsable(
   tags$div(
     style = "
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       grid-template-rows: auto auto;
-      column-gap: 40px;
-      row-gap: 0px;
+      column-gap: 10px;
+      row-gap: 85px;
       align-items: start;
     ",
     
     tags$div(
-      style = "grid-column: 1; grid-row: 1; height: 375px; width:350px",
-      dt1.1
-    ),
-    
-    tags$div(
-      style = "grid-column: 2; grid-row: 1; height: 375px; width:350px",
-      dt1.2
-    ),
-    
-    tags$div(
-      style = "grid-column: 1; grid-row: 2; height: 375px; width:350px",
+      style = "grid-column: 1; grid-row: 1; align-self: center; height:260px; width:300px",
       dt2.1
     ),
     
     tags$div(
-      style = "grid-column: 2; grid-row: 2; height: 375px; width:350px",
+      style = "grid-column: 1; grid-row: 2; height:260px; width:300px",
+      dt1.2
+    ),
+
+    tags$div(
+      style = "grid-column: 2; grid-row: 1; height:260px; width:300px",
       dt2.2
     ),
     
     tags$div(
       style = "
-        grid-column: 3;
-        grid-row: 1 / span 2;
+        grid-column: 2;
+        grid-row: 2;
         align-self: center;
-        height: 375px; width:350px",
-      dtright
+        height:260px; width:300px",
+      dt3.2
     )
   )
 )
@@ -291,7 +274,11 @@ htmltools::browsable(
 
 
 # Level 2 Shuffling -------------------------------------------------------
+tbl_original <- tbl_original %>%
+  arrange(SID, "Trial Nr.")
+tbl_original$color[1:4] <- tbl_original$color[5:8]
 
+set.seed(873)
 tbl_original_l2 <- tbl_original %>%
   select(-color) %>%
   mutate(is_swap = sample(rep(c(TRUE, FALSE), nrow(.)/2), size = nrow(.), replace = FALSE)) %>%
@@ -300,15 +287,12 @@ tbl_original_l2 <- tbl_original %>%
 
 
 # tbl unshuffled between cols as base
-colors <- c(
-  RColorBrewer::brewer.pal(nrow(tbl_original), "Greens")[c(4)],
-  RColorBrewer::brewer.pal(nrow(tbl_original), "Reds")[c(4)]
-)
-tbl_original$color <- colors[1]
+
+
 
 dt.l2.1 <- datatable(
-  tbl_original,
-  colnames = c("ID", "Trial", "X1", "X2", "y", "color"),
+  tbl_original %>% select(-c("Trial Nr.", "y")) %>% mutate(SID = ""),
+  colnames = c("ID", "x left", "x right", "color"),
   rownames = FALSE,
   options = list(
     paging = FALSE,
@@ -318,7 +302,7 @@ dt.l2.1 <- datatable(
     searching = FALSE,
     dom = 't',
     columnDefs = list(
-      list(visible = FALSE, targets = c(ncol(tbl_original)-1))  # hide last column
+      list(visible = FALSE, targets = c(ncol(tbl_original)-3))  # hide last column
     ), pageLength = 12,
     rowCallback = JS(
       "function(row, data) {
@@ -331,12 +315,13 @@ dt.l2.1 <- datatable(
 
 # then tbl shuffled between cols
 
-tbl_original_l2$color <- colors[as.numeric(tbl_original_l2$is_swap) + 1]
-tbl_original_l2$color2 <- colors[1]
+tbl_original_l2$color <- tbl_original$color
+tbl_original_l2$color[tbl_original_l2$is_swap] <- colors[2]
+tbl_original_l2$color2 <- tbl_original$color
 
-dt.l2.2 <- datatable(tbl_original_l2,
+dt.l2.2 <- datatable(tbl_original_l2 %>% select(-c("Trial Nr.", "y")) %>% mutate(SID = ""),
           rownames = FALSE,
-          colnames = c("ID", "Trial", "X1", "X2", "y", "is_swap", "color", "color2"),
+          colnames = c("ID", "x left", "x right", "is_swap", "color", "color2"),
           options = list(
             paging = FALSE,
             scrollY = FALSE,
@@ -345,7 +330,7 @@ dt.l2.2 <- datatable(tbl_original_l2,
             searching = FALSE,
             dom = 't',
             columnDefs = list(
-              list(visible = FALSE, targets = c((ncol(tbl_original_l2)-3):(ncol(tbl_original_l2))))  # hide last column
+              list(visible = FALSE, targets = c((ncol(tbl_original_l2)-5):(ncol(tbl_original_l2))))  # hide last column
             ), pageLength = 12,
             rowCallback = JS(
               "function(row, data) {
@@ -353,19 +338,14 @@ dt.l2.2 <- datatable(tbl_original_l2,
          var color2 = data[data.length - 1];
 
          // color only column 3 (index 2)
-         $('td:eq(2)', row).css('background-color', color);
+         $('td:eq(1)', row).css('background-color', color);
 
          // color only column 5 (index 4)
-         $('td:eq(3)', row).css('background-color', color);
+         $('td:eq(2)', row).css('background-color', color);
          
          // color only column 3 (index 2)
          $('td:eq(0)', row).css('background-color', color2);
          
-         // color only column 3 (index 2)
-         $('td:eq(1)', row).css('background-color', color2);
-         
-         // color only column 3 (index 2)
-         $('td:eq(4)', row).css('background-color', color2);
        }"
               )
             )) %>%
@@ -379,17 +359,17 @@ htmltools::browsable(
       display: grid;
       grid-template-columns: 1fr 1fr;
       grid-template-rows: auto;
-      column-gap: 40px;
+      column-gap: 10px;
       align-items: start;
     ",
     
     tags$div(
-      style = "grid-column: 1; grid-row: 1; height: 375px; width:350px",
+      style = "grid-column: 1; grid-row: 1; height: 250px; width:300px",
       dt.l2.1
     ),
     
     tags$div(
-      style = "grid-column: 2; grid-row: 1; height: 375px; width:350px",
+      style = "grid-column: 2; grid-row: 1; height: 250px; width:300px",
       dt.l2.2
     )
   )
