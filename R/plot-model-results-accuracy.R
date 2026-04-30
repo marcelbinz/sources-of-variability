@@ -22,7 +22,7 @@ if (!dir.exists("figures")) {dir.create("figures")}
 ## note. data_select only required for risky data set, not itc
 
 
-task <- c("itc", "risky", "mm", "2abd")[3]
+task <- c("itc", "risky", "mm", "2abd")[4]
 if (task == "risky"){
   data_select = 1 # 1 or 2: 1 includes problem repetitions, 2 excludes them
 }
@@ -323,9 +323,19 @@ dev.off()
 
 # Joint Plot 2 ------------------------------------------------------------
 
+pl_empty <- ggplot() + theme_minimal()
+
 pdf(file = task_settings$pl_dir_joint2, 12, 6)
 grid.draw(arrangeGrob(
-  arrangeGrob(pl_conditions, pl_masklength, nrow = 1, widths = c(.35, .65)),
+  arrangeGrob(pl_empty, pl_conditions, pl_masklength, nrow = 1, widths = c(.25, .25, .5)),
+  arrangeGrob(pl_variables_shared_nohistory, pl_variables_original, nrow = 1),
+  nrow = 2
+))
+dev.off()
+
+png(file = str_replace(task_settings$pl_dir_joint2, ".pdf", ".png"), 11.1, 5.55, units="in", res = 300)
+grid.draw(arrangeGrob(
+  arrangeGrob(pl_empty, pl_conditions, pl_masklength, nrow = 1, widths = c(.25, .25, .5)),
   arrangeGrob(pl_variables_shared_nohistory, pl_variables_original, nrow = 1),
   nrow = 2
 ))
