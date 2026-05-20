@@ -71,9 +71,9 @@ plot_four_conditions <- function(pth, ttl, task_settings){
   
   tbl_conditions <- tbl_conditions %>% mutate(
     History = as.numeric(!str_detect(Condition, "NoHistory")),
-    History = factor(History, labels = c("No History", "History"), ordered = TRUE),
+    History = factor(History, labels = c("Shuffled\nHistory", "Original\nHistory"), ordered = TRUE),
     ID = as.numeric(str_detect(Condition, "ID")),
-    ID = factor(ID, labels = c("Shared", "ID"), ordered = TRUE)
+    ID = factor(ID, labels = c("Shuffled ID", "Original ID"), ordered = TRUE)
   )
   
   

@@ -395,7 +395,7 @@ plot_example_conditions <- function(my_tbl, ttl, plot_legend = FALSE) {
     scale_x_discrete(
       labels = function(x) str_replace(x, "^(.{8})(.*)$", "\\1\n\\2")
     ) +
-    theme_bw() +
+    theme_classic() +
     theme(
       axis.title = element_text(size = 14),
       axis.text = element_text(size = 14),
