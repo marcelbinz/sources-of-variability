@@ -60,14 +60,14 @@ def parseargs():
             "med_seq",
             "long_seq",
             "culture_seq_1000",
-            "culture_seq_3000",
+            "culture_seq_3000", # crashes memory, do not use
         ],
         help="Has a different meaning for the different datasets.",
     )
     aa(
         "--indep_vars",
         type=str,
-        default="all",
+        default="all_culture",
         choices=["few_culture", "all_culture", "all_no_culture"],
         help="only used for mm data: Which independent variables to include in the model. and whether culture should be dropped from indep vrs",
     )
@@ -96,7 +96,7 @@ def parseargs():
         help=""
         "Type of transformation to apply to the data. 'z' for z-scoring, 'mean_center_only' for mean-centering only, "
         "'log_values' for log-transforming followed by z-scoring."
-        "Note that log scaling only necessary for itc dataset, not for risky dataset.",
+        "Note that log scaling only necessary for itc dataset.",
     )
     aa(
         "--rnd_seed",
@@ -143,6 +143,12 @@ def parseargs():
         default=5,
         help="Window size for windowed causal mask.",
     )
+    aa(
+        "--num_epochs",
+        type=int,
+        default=250,
+        help="Number of training epochs.",
+    )
     args = parser.parse_args()
     return args
 
@@ -180,23 +186,24 @@ def run(
     num_layers=4,
     masktype="causal",
     windowsize=5,
+    num_epochs=250
 ):
 
     # ===================== Setup =====================
 
     condition_names = ["original", "id_nohist", "shared_hist", "shared_nohist"]
-    # can be handed over as argument when different data sets are used, but for now, just hardcoded for the itc data set
     condition_id = condition_names.index(condition_name)
 
     l_swap_colnames = ast.literal_eval(swap_colnames)
     l_shuffle_single_colnames = ast.literal_eval(shuffle_single_colnames)
 
-    # when applied to different tasks as well, likely needs to be adapted to be more generalizable
     swap_varnames = [sc[0].split("_")[-1] for sc in l_swap_colnames if len(sc) > 0]
     # unique variable names that are swapped
     swap_varnames = list(set(swap_varnames))
+    # variable names that are shuffled within a single column
     l_shuffle_varnames = [
-        "_".join(ssc.split("_")[1:]) for ssc in l_shuffle_single_colnames
+        "_".join(ssc.split("_")[1:]) if "_" in ssc else ssc
+        for ssc in l_shuffle_single_colnames
     ]
     shuffle_variables = swap_varnames + l_shuffle_varnames
 
@@ -256,8 +263,8 @@ def run(
     logger.info("created four conditions")
 
     batch_size = 32
-    num_epochs = 500  # 150 250
-    lr = 3e-4 #5e-4#1e-3## 1e-3 for 2abd, 3e-4 for all other datasets, 5e-4 for mm with few predictors
+    #num_epochs = 250 #700  # 
+    lr = 3e-4 #5e-4#1e-3#3e-4# 1e-3 for 2abd, 3e-4 for all other datasets, 5e-4 for mm with few predictors
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -499,4 +506,5 @@ if __name__ == "__main__":
         num_layers=args.num_layers,
         masktype=args.masktype,
         windowsize=args.windowsize,
+        num_epochs=args.num_epochs,
     )
