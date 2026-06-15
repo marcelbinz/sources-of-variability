@@ -323,9 +323,19 @@ dev.off()
 
 # Joint Plot 2 ------------------------------------------------------------
 
+pl_empty <- ggplot() + theme_minimal()
+
 pdf(file = task_settings$pl_dir_joint2, 12, 6)
 grid.draw(arrangeGrob(
-  arrangeGrob(pl_conditions, pl_masklength, nrow = 1, widths = c(.35, .65)),
+  arrangeGrob(pl_empty, pl_conditions, pl_masklength, nrow = 1, widths = c(.25, .3, .45)),
+  arrangeGrob(pl_variables_shared_nohistory, pl_variables_original, nrow = 1),
+  nrow = 2
+))
+dev.off()
+
+png(file = str_replace(task_settings$pl_dir_joint2, ".pdf", ".png"), 11.1, 5.55, units="in", res = 300)
+grid.draw(arrangeGrob(
+  arrangeGrob(pl_empty, pl_conditions, pl_masklength, nrow = 1, widths = c(.25, .3, .45)),
   arrangeGrob(pl_variables_shared_nohistory, pl_variables_original, nrow = 1),
   nrow = 2
 ))
