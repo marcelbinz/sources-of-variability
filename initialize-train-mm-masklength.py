@@ -11,10 +11,11 @@ import os
 base_dict = {
     "rnd_seed": 1,
     "python_file": "train.py",
-    "dataset_name": "mm",  # or "itc"
+    "dataset_name": "mm",
+    "num_epochs": 250
 }
-l_dataset_select = ["full"]  # "testing_size"
-l_condition_names = ["original"]  # [,],, "id_nohist", "shared_nohist", "shared_hist"
+l_dataset_select = ["med_seq"]  # "testing_size"
+l_condition_names = ["original"]  # "id_nohist", "shared_nohist", "shared_hist"
 
 
 # swap_colnames and shuffle_single_colnames are only needed when variables within a condition are shuffled
@@ -47,10 +48,6 @@ l_windowsize = [
 # Generate all combinations
 combinations = list(
     chain(
-        # product(
-        #     l_condition_names, swap_colnames, shuffle_single_colnames,
-        #     l_d_model, l_d_ff, l_is_testcase, l_num_layers, l_masktype, l_windowsize
-        # ),
         product(
             l_dataset_select,
             l_condition_names,
@@ -130,6 +127,8 @@ def run_command(args):
         args["swap_colnames"],
         "--shuffle_single_colnames",
         args["shuffle_single_colnames"],
+        "--num_epochs",
+        str(args["num_epochs"]),
     ]
     subprocess.run(command)
 
@@ -141,31 +140,3 @@ def run_command(args):
 # parallel
 with ThreadPoolExecutor(max_workers=20) as executor:
     executor.map(run_command, arg_combinations)
-
-
-# best hyperparameters for itc data
-
-
-# best hyperparameters for risky no repetitions data
-# l_d_model = [32]
-# l_d_ff = [128]
-# l_is_testcase = ["False"]
-# l_num_layers = [1]
-# l_masktype = ["causal"] # "windowed_causal"
-# l_windowsize = [2]
-
-# best hyperparameters for risky peterson selected data
-# l_d_model = [32]
-# l_d_ff = [64]
-# l_is_testcase = ["False"]
-# l_num_layers = [2]
-# l_masktype = ["causal"] # "windowed_causal"
-# l_windowsize = [2]
-
-# best hyperparameters for risky peterson selected data with windowed causal mask
-# l_d_model = [32]
-# l_d_ff = [128]
-# l_is_testcase = ["False"]
-# l_num_layers = [1]
-# l_masktype = ["windowed_causal"] # "causal"
-# l_windowsize = [1, 2, 5, 10]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]

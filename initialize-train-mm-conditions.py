@@ -9,15 +9,15 @@ import os
 
 # Define the fixed parts of the dictionary
 base_dict = {
-    "rnd_seed": 1,
+    "rnd_seed": 2,
     "python_file": "train.py",
     "dataset_name": "mm",  # or "itc"
-    "indep_vars": "all_no_culture"
+    "indep_vars": "all_no_culture",
+    "num_epochs": 250,
 }
 l_dataset_select = [
     "med_seq",
-    #"long_seq",
-]  # NB short_seq includes most data bc more participants who completed fewer trials
+]
 l_condition_names = ["original", "id_nohist", "shared_nohist", "shared_hist"]  # [,],
 
 
@@ -126,6 +126,8 @@ def run_command(args):
         args["swap_colnames"],
         "--shuffle_single_colnames",
         args["shuffle_single_colnames"],
+        "--num_epochs",
+        str(args["num_epochs"]),
     ]
     subprocess.run(command)
 

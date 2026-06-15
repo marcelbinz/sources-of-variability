@@ -12,9 +12,9 @@ base_dict = {
     "rnd_seed": 1,
     "python_file": "train.py",
     "dataset_name": "itc", # or "risky"
-    "dataset_select": "repetitions", # is ignored for itc data"
-    "tf":"log_values"
-
+    "dataset_select": "full", # is ignored for itc data"
+    "tf":"log_values",
+    "num_epochs": 250
 }
 
 l_condition_names = ["original"] # [,, "shared_nohist", "shared_hist", "id_nohist"]
@@ -36,17 +36,13 @@ l_d_ff = [256]
 l_is_testcase = ["False"]
 l_num_layers = [2]
 l_masktype = ["windowed_causal"] # "causal"
-l_windowsize = [30, 40]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
+l_windowsize = [1, 3, 10, 15, 30, 40]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
 
 
 
 # second part can be dropped when only generated data sets (i.e., four conditions) are used
 # Generate all combinations
 combinations = list(chain(
-    # product(
-    #     l_condition_names, swap_colnames, shuffle_single_colnames,
-    #     l_d_model, l_d_ff, l_is_testcase, l_num_layers, l_masktype, l_windowsize
-    # ),
     product(
         l_condition_names, swap_colnames_2, shuffle_single_colnames_2,
         l_d_model, l_d_ff, l_is_testcase, l_num_layers, l_masktype, l_windowsize
@@ -96,6 +92,7 @@ def run_command(args):
         "--condition_name", args["condition_name"],
         "--swap_colnames", args["swap_colnames"],
         "--shuffle_single_colnames", args["shuffle_single_colnames"],
+        "--num_epochs", str(args["num_epochs"]),
     ]
     subprocess.run(command)
 
@@ -109,32 +106,3 @@ def run_command(args):
 with ThreadPoolExecutor(max_workers=20) as executor:
     executor.map(run_command, arg_combinations)
 
-
-
-# best hyperparameters for itc data
-
-
-
-# best hyperparameters for risky no repetitions data
-# l_d_model = [32]
-# l_d_ff = [128]
-# l_is_testcase = ["False"]
-# l_num_layers = [1]
-# l_masktype = ["causal"] # "windowed_causal"
-# l_windowsize = [2] 
-
-# best hyperparameters for risky peterson selected data
-# l_d_model = [32]
-# l_d_ff = [64]
-# l_is_testcase = ["False"]
-# l_num_layers = [2]
-# l_masktype = ["causal"] # "windowed_causal"
-# l_windowsize = [2]
-
-# best hyperparameters for risky peterson selected data with windowed causal mask
-# l_d_model = [32]
-# l_d_ff = [128]
-# l_is_testcase = ["False"]
-# l_num_layers = [1]
-# l_masktype = ["windowed_causal"] # "causal"
-# l_windowsize = [1, 2, 5, 10]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]

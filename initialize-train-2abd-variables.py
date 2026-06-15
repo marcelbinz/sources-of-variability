@@ -14,7 +14,7 @@ base_dict = {
     "dataset_name": "2abd",  # or "itc"
 }
 l_dataset_select = [""]  # currently ignored for 2abd
-l_condition_names = ["original", "shared_nohist", "id_nohist", "shared_hist"]  # [,],
+l_condition_names = ["id_nohist", "shared_hist", "original", "shared_nohist"]  # [,],
 
 
 # swap_colnames and shuffle_single_colnames are only needed when variables within a condition are shuffled
@@ -27,7 +27,7 @@ l_condition_names = ["original", "shared_nohist", "id_nohist", "shared_hist"]  #
 swap_colnames = ['[[\"right_m\", \"left_m\"], [\"right_v\", \"left_v\"]]']
 shuffle_single_colnames = ['[\"right_picked_prev\"]', '[]']
 swap_colnames_2 = ['[[\"right_m\", \"left_m\"]]', '[[\"right_v\", \"left_v\"]]', "[[]]"]  # [] #
-shuffle_single_colnames_2 = ["[]"]
+shuffle_single_colnames_2 = ["[]", '[\"right_picked_prev\"]']
 
 
 l_d_model = [8]

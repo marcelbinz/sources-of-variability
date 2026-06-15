@@ -4,54 +4,53 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import product, chain
 
 
-import os
-
-
 # Define the fixed parts of the dictionary
 base_dict = {
-    "rnd_seed": 2,
+    "rnd_seed": 1,
     "python_file": "train.py",
-    "dataset_name": "itc",  # or "risky"
-    "tf": "log_values",
-    "num_epochs": 250,
+    "dataset_name": "mm",  # or "itc"
+    "num_epochs": 250
 }
-
-l_condition_names = ["original", "shared_nohist", "shared_hist", "id_nohist"]  # [,]
-
+l_dataset_select = [
+    "med_seq",
+    #"culture_seq_1000",
+]  # NB short_seq includes most data bc more participants who completed fewer trials
+l_indep_vars = ["few_culture"] # , "all_culture""all" uses all indep vars, "few" only to test for age, culture and age x culture effect
+l_condition_names = [
+    "id_nohist",
+    "shared_nohist",
+]  # [,], no proper history available for culture sequences, because they are merged from different people
 
 # swap_colnames and shuffle_single_colnames are only needed when variables within a condition are shuffled
 # i.e., besides individual differences and trial history
 # as not all fully crossed, get combinations in two steps
 
 # for itc data:
-# swap_colnames = ['[[\"right_val\", \"left_val\"], [\"right_time\", \"left_time\"]]']
-# shuffle_single_colnames = ['[\"right_picked_prev\"]', '[]']
-swap_colnames_2 = [
+swap_colnames = [
+    '[[\"left_oldman\", \"right_oldman\"], [\"left_oldwoman\", \"right_oldwoman\"], [\"left_man\", \"right_man\"], [\"left_woman\", \"right_woman\"], [\"left_boy\", \"right_boy\"], [\"left_girl\", \"right_girl\"]]',
     "[[]]"
-]  # ,'[[\"right_val\", \"left_val\"]]', '[[\"right_time\", \"left_time\"]]'
-shuffle_single_colnames_2 = ["[]"]
-
-# for 10 train trials: d_model: 16, d_ff: 128
-# for 38 train trials: d_model: 32, d_ff: 256
-# for 130 train trials: d_model: 32, d_ff: 256
+    ]
+shuffle_single_colnames = ['[\"Eastern\", \"Southern\"]', '[]']
 
 
-# larger model dims for med and full select
-l_dataset_select = ["full"]
-l_d_model = [32]
-l_d_ff = [256]
+l_d_model = [4] # 8 #
+l_d_ff = [8] # 16 #
 l_is_testcase = ["False"]
 l_num_layers = [2]
 l_masktype = ["causal"]  # "windowed_causal"
 l_windowsize = [2]  # only relevant for windowed_causal, ignored when "causal" # [7, 10]
 
+
+# second part can be dropped when only generated data sets (i.e., four conditions) are used
+# Generate all combinations
 combinations = list(
     chain(
         product(
-            l_condition_names,
-            swap_colnames_2,
-            shuffle_single_colnames_2,
             l_dataset_select,
+            l_condition_names,
+            l_indep_vars,
+            swap_colnames,
+            shuffle_single_colnames,
             l_d_model,
             l_d_ff,
             l_is_testcase,
@@ -62,15 +61,15 @@ combinations = list(
     )
 )
 
-
 # Create the list of dictionaries
 arg_combinations = []
 #  in combinations:
 for (
+    dataset_select,
     condition_name,
+    indep_vars,
     swap_colnames,
     shuffle_single_colnames,
-    dataset_select,
     d_model,
     d_ff,
     is_testcase,
@@ -81,10 +80,11 @@ for (
     temp_dict = base_dict.copy()
     temp_dict.update(
         {
+            "dataset_select": dataset_select,
             "condition_name": condition_name,
+            "indep_vars": indep_vars,
             "swap_colnames": swap_colnames,
             "shuffle_single_colnames": shuffle_single_colnames,
-            "dataset_select": dataset_select,
             "d_model": d_model,
             "d_ff": d_ff,
             "is_testcase": is_testcase,
@@ -103,12 +103,12 @@ def run_command(args):
     command = [
         "python",
         args["python_file"],
-        "--tf",
-        args["tf"],
         "--dataset_name",
         args["dataset_name"],
         "--dataset_select",
         args["dataset_select"],
+        "--indep_vars",
+        args["indep_vars"],
         "--rnd_seed",
         str(args["rnd_seed"]),
         "--d_model",

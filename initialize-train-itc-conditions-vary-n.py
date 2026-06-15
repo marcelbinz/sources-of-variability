@@ -9,7 +9,7 @@ import os
 
 # Define the fixed parts of the dictionary
 base_dict = {
-    "rnd_seed": 2,
+    "rnd_seed": 1,
     "python_file": "train.py",
     "dataset_name": "itc",  # or "risky"
     "tf": "log_values",
@@ -37,9 +37,9 @@ shuffle_single_colnames_2 = ["[]"]
 
 
 # larger model dims for med and full select
-l_dataset_select = ["full"]
+l_dataset_select = ["medium"]
 l_d_model = [32]
-l_d_ff = [256]
+l_d_ff = [128]
 l_is_testcase = ["False"]
 l_num_layers = [2]
 l_masktype = ["causal"]  # "windowed_causal"
@@ -62,6 +62,29 @@ combinations = list(
     )
 )
 
+# different model dims for small select
+l_dataset_select_2 = ["small"]
+l_d_model_2 = [16]
+l_d_ff_2 = [128]
+
+combinations2 = list(
+    chain(
+        product(
+            l_condition_names,
+            swap_colnames_2,
+            shuffle_single_colnames_2,
+            l_dataset_select_2,
+            l_d_model_2,
+            l_d_ff_2,
+            l_is_testcase,
+            l_num_layers,
+            l_masktype,
+            l_windowsize,
+        )
+    )
+)
+
+combinations += combinations2
 
 # Create the list of dictionaries
 arg_combinations = []
@@ -142,3 +165,4 @@ def run_command(args):
 # parallel
 with ThreadPoolExecutor(max_workers=20) as executor:
     executor.map(run_command, arg_combinations)
+
