@@ -10,7 +10,6 @@ from functools import reduce
 from itertools import chain
 import logging
 
-from datasets import load_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -724,8 +723,7 @@ def load_risky_dataset(drop_ambiguous, drop_no_feedback, drop_repetitions):
 
     """
 
-    ds = load_dataset("marcelbinz/peterson2021using", "exp1")
-    df_risky = ds["train"].to_pandas()
+    df_risky = pd.read_csv("data/dfd-peterson-2021.csv", low_memory=False)
 
     # minimal number of trials available per participant to be included in the data set
     n_minimal = 50  # 60#
