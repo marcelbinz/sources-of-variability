@@ -140,5 +140,5 @@ def run_command(args):
 #     run_command(args)
 
 # parallel
-with ThreadPoolExecutor(max_workers=20) as executor:
-    executor.map(run_command, arg_combinations)
+# with ThreadPoolExecutor(max_workers=20) as executor:
+#     executor.map(run_command, arg_combinations)

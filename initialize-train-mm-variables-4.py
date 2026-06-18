@@ -30,7 +30,7 @@ swap_colnames = [
     '[[\"left_oldman\", \"right_oldman\"], [\"left_oldwoman\", \"right_oldwoman\"], [\"left_man\", \"right_man\"], [\"left_woman\", \"right_woman\"], [\"left_boy\", \"right_boy\"], [\"left_girl\", \"right_girl\"]]',
     "[[]]"
     ]
-shuffle_single_colnames = ['[\"Eastern\", \"Southern\"]', '[]']
+shuffle_single_colnames = ['[\"Eastern\", \"Southern\", \"right_picked_prev\"]', '[\"right_picked_prev\"]']
 
 
 l_d_model = [4] # 8 #
@@ -136,9 +136,9 @@ def run_command(args):
 
 
 # serial
-# for args in arg_combinations:
-#     run_command(args)
+for args in arg_combinations:
+    run_command(args)
 
 # parallel
-with ThreadPoolExecutor(max_workers=20) as executor:
-    executor.map(run_command, arg_combinations)
+# with ThreadPoolExecutor(max_workers=20) as executor:
+#     executor.map(run_command, arg_combinations)
