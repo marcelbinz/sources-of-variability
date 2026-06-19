@@ -102,9 +102,9 @@ def run_command(args):
 
 
 # serial
-# for args in arg_combinations:
-#     run_command(args)
+for args in arg_combinations:
+    run_command(args)
 
 # parallel
-with ThreadPoolExecutor(max_workers=20) as executor:
-    executor.map(run_command, arg_combinations)
+# with ThreadPoolExecutor(max_workers=20) as executor:
+#     executor.map(run_command, arg_combinations)
