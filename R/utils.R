@@ -43,23 +43,27 @@ kalman_learning <- function(tbl_df, no, sigma_epsilon_sq, m0) {
 
 
 
-plot_four_conditions <- function(pth, ttl, task_settings){
+plot_four_conditions <- function(pth, ttl = NULL, task_settings){
   "read results from four conditions and plot"
   tbl_accuracy <- read_csv(pth)
   tbl_accuracy_long <- tbl_accuracy %>%
-    select(epoch, ends_with("dev/acc_epoch")) %>%
+    select(epoch, ends_with("dev/acc_epoch") | ends_with("dev/loss_epoch")) %>%
     pivot_longer(-epoch) %>%
     mutate(
       Condition = str_match(name, "condition=([a-z_]*)_[md]")[,2],
-      shuffle = str_match(name, "moreshuffle=([a-z_/-]*)_tf")[,2]
-    )
+      shuffle = str_match(name, "more_shuffle=([a-z_/-]*)_tf")[,2],
+      metric = factor(str_detect(name, "loss"), labels = c("Accuracy", "Loss"))
+    ) %>% select(-name) %>%
+    pivot_wider(values_from = "value", names_from = "metric")
   
   
   # select epochs to be analyzed
   tbl_conditions <- tbl_accuracy_long %>%
     filter(between(epoch, task_settings$epochthxs[1], task_settings$epochthxs[2])) %>%
     group_by(Condition, shuffle) %>%
-    summarize(mn_acc = mean(value), sd = sd(value)/sqrt(task_settings$n_epochs), .groups = "drop")
+    summarize(
+      mn_acc = mean(Accuracy), sd_acc = sd(Accuracy)/sqrt(task_settings$n_epochs),
+      mn_loss = mean(Loss), sd_loss = sd(Loss)/sqrt(task_settings$n_epochs), .groups = "drop")
   
   tbl_conditions$Condition <- factor(
     tbl_conditions$Condition,
@@ -71,16 +75,19 @@ plot_four_conditions <- function(pth, ttl, task_settings){
   
   tbl_conditions <- tbl_conditions %>% mutate(
     History = as.numeric(!str_detect(Condition, "NoHistory")),
-    History = factor(History, labels = c("Shuffled\nHistory", "Original\nHistory"), ordered = TRUE),
     ID = as.numeric(str_detect(Condition, "ID")),
-    ID = factor(ID, labels = c("Shuffled ID", "Original ID"), ordered = TRUE)
+    )
+  tbl_conditions <- tbl_conditions %>% 
+    mutate(
+    History = factor(History, labels = c("Shuffled\nHistory", "Original\nHistory")[1:length(unique(.$History))], ordered = TRUE),
+    ID = factor(ID, labels = c("Shuffled ID", "Original ID")[1:length(unique(.$ID))], ordered = TRUE)
   )
   
   
   pl_conditions <- ggplot(tbl_conditions, aes(History, mn_acc, group = ID)) +
     geom_hline(yintercept = .5, linetype = "dotdash", linewidth = 1, color = "red", alpha = .3) +
     geom_errorbar(aes(
-      History, ymin = mn_acc - 2*sd, ymax = mn_acc + 2*sd, color = ID
+      History, ymin = mn_acc - 2*sd_acc, ymax = mn_acc + 2*sd_acc, color = ID
     ), width = .2, linewidth = .75) +
     geom_line((aes(color = ID))) +
     geom_point(color = "white", size = 5) +
@@ -100,55 +107,23 @@ plot_four_conditions <- function(pth, ttl, task_settings){
     ) +
     coord_cartesian(ylim = c(.5, 1))
   
-  return(pl_conditions)
-}
-
-
-prep_tbl_masklength <- function(task_settings, task) {
-  "read masklength data and format results tbl"
+  if (!is.null(ttl)) pl_conditions <- pl_conditions + labs(title = ttl)
   
-  tbl_constrain <- read_csv(task_settings$pth_masklength)
-  
-  tbl_constrain <- tbl_constrain %>% select(
-    c("epoch",
-      (contains("original") | contains("id_nohist")) &
-        contains("dev/acc_epoch") & !contains("MIN") & !contains("MAX")
-    ))
-  
-  masklengths <- str_match(colnames(tbl_constrain), "windowsize=([0-9]+) | (epoch)")[, 2]
-  masklengths <- masklengths[!is.na(masklengths)]
-  # last two are all and none
-  masklengths <- masklengths[0:(length(masklengths)-2)]
-  
-  #Window=
-  colnames(tbl_constrain) <- c("Epoch", masklengths, "All", "No Hist")
-  
-  
-  # note. in mm not all masklengths converged between 201 and 250
-  # masklength == 10 overfit to the train data between 201 and 250
-  # therefore, use a range, in which performance was stable
-  if (task == "mm") task_settings$epochthxs <- c(161, 210)
-  
-  tbl_constrain_long <- tbl_constrain %>% pivot_longer(-"Epoch")  %>%
-    filter(between(Epoch, task_settings$epochthxs[1], task_settings$epochthxs[2])) 
-  tbl_constrain_long$name <- factor(
-    tbl_constrain_long$name,
-    levels = c(sort(as.numeric(masklengths)), "All", "No Hist")
-  )
-  
-  return(list(tbl_constrain_long = tbl_constrain_long, masklengths = masklengths))
+  return(list(pl_conditions = pl_conditions, tbl_conditions = tbl_conditions))
 }
 
 prep_tbl_variables <- function(task_settings) {
   "load and subset variables analysis results"
   tbl_accuracy <- read_csv(task_settings$pth_variables)
   tbl_accuracy_long <- tbl_accuracy %>%
-    select(epoch, ends_with("dev/acc_epoch")) %>%
+    select(epoch, contains("dev/acc_epoch") | contains("dev/loss_epoch")) %>%
     pivot_longer(-epoch) %>%
     mutate(
       Condition = str_match(name, "condition=([a-z_]*)_[md]")[,2],
-      shuffle = str_match(name, "more_shuffle=([A-Za-z_/-]*)_tf")[,2]
-    )
+      shuffle = str_match(name, "more_shuffle=([A-Za-z_/-]*)_tf")[,2],
+      metric = factor(str_detect(name, "loss"), labels = c("Accuracy", "Loss"))
+    ) %>% select(-name) %>%
+    pivot_wider(values_from = "value", names_from = "metric")
   
   tbl_accuracy_long$Condition <- factor(
     tbl_accuracy_long$Condition,
@@ -208,7 +183,12 @@ prep_tbl_variables <- function(task_settings) {
   tbl_variables <- tbl_accuracy_long %>%
     filter(between(epoch, task_settings$epochthxs[1], task_settings$epochthxs[2])) %>%
     group_by(Condition, History, ID, available, shuffle) %>%
-    summarize(mn_acc = mean(value), se = sd(value)/sqrt(task_settings$n_epochs), .groups = "drop")
+    summarize(
+      mn_acc = mean(Accuracy), 
+      se_acc = sd(Accuracy)/sqrt(task_settings$n_epochs), 
+      mn_loss = mean(Loss), 
+      se_loss = sd(Loss)/sqrt(task_settings$n_epochs), 
+      .groups = "drop")
   
   return(tbl_variables)
 }
@@ -348,6 +328,49 @@ plot_gain <- function(tbl_plt, ttl, ymax = .14) {
       panel.grid.major.y = element_line(size = 1, colour = "grey80"), 
       panel.grid.minor.y = element_line(size = 0.3, colour = "grey80")
     )
+}
+
+
+prep_tbls_masklength <- function(task_settings) {
+  
+  tbl_constrain <- read_csv(task_settings$pth_masklength)
+  tbl_constrain <- tbl_constrain %>% select(
+    c("epoch",
+      (contains("original") | contains("id_nohist")) &
+        (contains("dev/acc_epoch") | contains("dev/loss_epoch")) & !contains("MIN") & !contains("MAX")
+    ))
+  
+  # note. in mm masklength == 10 overfit to the train data between 201 and 250
+  # therefore, use 160-210
+  if (task == "mm") task_settings$epochthxs <- c(161, 210)
+  
+  tbl_constrain_long <- tbl_constrain %>% pivot_longer(-"epoch") %>%
+    filter(between(epoch, task_settings$epochthxs[1], task_settings$epochthxs[2])) %>%
+    mutate(
+      masklength = str_match(name, "windowsize=([0-9]+)")[,2],
+      metric = factor(str_detect(name, "loss"), labels = c("Accuracy", "Loss")),
+      is_mask = str_detect(name, "windowed_causal"),
+      is_history = str_detect(name, "original")
+    ) %>% select(-name) %>%
+    mutate(masklength = ifelse(is_mask, masklength, ifelse(is_history, 9999, 10000))) %>%
+    pivot_wider(names_from = "metric", values_from = "value")
+  tbl_constrain_long$masklength <- as.numeric(tbl_constrain_long$masklength)
+  tbl_constrain_long$masklength <- factor(tbl_constrain_long$masklength)
+  tbl_constrain_long$masklength <- factor(
+    tbl_constrain_long$masklength, 
+    labels = c(head(levels(tbl_constrain_long$masklength), -2), "All", "No Hist")
+  )
+  
+  
+  tbl_plt_masklength <- tbl_constrain_long %>%
+    group_by(masklength) %>%
+    summarize(accuracy = mean(Accuracy, na.rm = TRUE), .groups = "drop")
+  
+  tbl_masklength_loss <- tbl_constrain_long %>%
+    group_by(masklength) %>%
+    summarize(mn_acc = mean(Accuracy, na.rm = TRUE), mn_loss = mean(Loss, na.rm = TRUE), .groups = "drop")
+  
+  return(list(tbl_plt_masklength = tbl_plt_masklength, tbl_masklength_loss = tbl_masklength_loss))
 }
 
 
