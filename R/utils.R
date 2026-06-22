@@ -93,7 +93,10 @@ plot_four_conditions <- function(pth, ttl = NULL, task_settings){
     geom_point(color = "white", size = 5) +
     geom_point(aes(color = ID), size = 3) +
     scale_color_brewer(palette = "Set1") +
-    scale_y_continuous(expand = expansion(add = c(.02, 0))) +
+    scale_y_continuous(
+      breaks = seq(0.5, 1, 0.1),
+      expand = expansion(add = c(0.02, 0))
+    ) +
     labs(y = "Test Accuracy") +
     theme_bw() +
     theme(

@@ -21,7 +21,6 @@ if (!dir.exists("figures")) {dir.create("figures")}
 ## note. data_select only required for risky data set, not itc
 
 for (task in c("itc", "mm")){
-  task <- "mm"
   if (task == "risky"){
     data_select = 1 # 1 or 2: 1 includes problem repetitions, 2 excludes them
   }
@@ -201,11 +200,16 @@ for (task in c("itc", "mm")){
     geom_label(aes(y = accuracy - .05, label = round(accuracy, 3))) +
     theme_bw() +
     scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-    scale_y_continuous(expand = expansion(add = c(0.02, 0))) +
+    scale_y_continuous(
+      breaks = seq(0.5, 1, 0.1),
+      expand = expansion(add = c(0.02, 0))
+    ) +
     labs(x = "Size of Window", y = "Test Accuracy") +
     theme(
       axis.title = element_text(size = 16),
       axis.text = element_text(size = 14),
+      legend.text = element_text(size = 14),
+      legend.title = element_blank(),
       title = element_text(size = 16),
       strip.background = element_rect(fill = "white"), 
       axis.title.x = element_blank()
@@ -284,6 +288,19 @@ for (task in c("itc", "mm")){
     min_y_delta = min(tbl_plt_gain_both$delta_mn)
   )
   
+  
+  pl_masklength <- ggplotGrob(pl_masklength)
+  pl_conditions <- ggplotGrob(pl_conditions)
+  
+  # Make the panel widths identical
+  maxWidth <- grid::unit.pmax(pl_masklength$widths, pl_conditions$widths)
+  pl_masklength$widths <- maxWidth
+  pl_conditions$widths <- maxWidth
+  
+  # Equalize panel heights
+  maxHeight  <- unit.pmax(pl_masklength$heights, pl_conditions$heights)
+  pl_masklength$heights <- maxHeight
+  pl_conditions$heights <- maxHeight
   
   # Joint Plot 1 ------------------------------------------------------------
   
