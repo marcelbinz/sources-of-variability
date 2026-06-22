@@ -24,50 +24,64 @@ tbl_itc_test <- tbl_itc %>%
   filter(trial_id > 130)# %>% filter(sid_unique <= 200)
 
 
-t_start <- Sys.time()
-model_full <- glmer(
-  later_picked ~ 
-    abs_vd_z + rel_vd_z + 
-    abs_td_z + rel_td_z +
-    (1 + abs_td_z || sid_unique), 
-  data = tbl_itc_train,
-  family = binomial(link = "logit"),
-  control = glmerControl(
-    optimizer = "nloptwrap",
-    calc.derivs = FALSE
+
+# Run or Load The Models --------------------------------------------------
+
+
+is_fit <- TRUE # set to FALSE when only loading saved modeling results
+
+
+if (is_fit) {
+  model_full <- glmer(
+    later_picked ~ 
+      abs_vd_z + rel_vd_z + 
+      abs_td_z + rel_td_z +
+      (1 + abs_td_z || sid_unique), 
+    data = tbl_itc_train,
+    family = binomial(link = "logit"),
+    control = glmerControl(
+      optimizer = "nloptwrap",
+      calc.derivs = FALSE
+    )
   )
-)
-t_run_full <- Sys.time() - t_start
-
-t_start <- Sys.time()
-
-model_time <- glmer(
-  later_picked ~ abs_td_z + (1 + abs_td_z || sid_unique), 
-  data = tbl_itc_train,
-  family = binomial(link = "logit"),
-  control = glmerControl(
-    optimizer = "nloptwrap",
-    calc.derivs = FALSE
+  saveRDS(model_full, file = "models/full-heuristic.rds")
+  
+  model_time <- glmer(
+    later_picked ~ abs_td_z + (1 + abs_td_z || sid_unique), 
+    data = tbl_itc_train,
+    family = binomial(link = "logit"),
+    control = glmerControl(
+      optimizer = "nloptwrap",
+      calc.derivs = FALSE
+    )
   )
-)
-t_run_time <- Sys.time() - t_start
-
-t_start <- Sys.time()
-# whether rel or abs value is taken does not make a difference wrt prediction accuracy
-model_value <- glmer(
-  later_picked ~ abs_vd_z + (1 + abs_vd_z || sid_unique), 
-  data = tbl_itc_train,
-  family = binomial(link = "logit"),
-  control = glmerControl(
-    optimizer = "nloptwrap",
-    calc.derivs = FALSE
+  saveRDS(model_time, file = "models/time-heuristic.rds")
+  
+  
+  # whether rel or abs value is taken does not make a difference wrt prediction accuracy
+  model_value <- glmer(
+    later_picked ~ abs_vd_z + (1 + abs_vd_z || sid_unique), 
+    data = tbl_itc_train,
+    family = binomial(link = "logit"),
+    control = glmerControl(
+      optimizer = "nloptwrap",
+      calc.derivs = FALSE
+    )
   )
-)
-t_run_value <- Sys.time() - t_start
+  saveRDS(model_value, file = "models/value-heuristic.rds")
+  
+} else {
+  model_full  <- readRDS("models/full-heuristic.rds")
+  model_time  <- readRDS("models/time-heuristic.rds")
+  model_value <- readRDS("models/value-heuristic.rds")
+  
+}
 
-t_run_nomcov_optimdiff <- c(t_run_full, t_run_time, t_run_value)
 
-#t_run_mcov_optimdefault <- c(t_run_full, t_run_time, t_run_value)
+
+# Generate Predictions ----------------------------------------------------
+
+
 tbl_itc_test$p_hat_full <- predict(model_full, newdata = tbl_itc_test, type="response")
 tbl_itc_test$y_pred_full_5 <- as.integer(tbl_itc_test$p_hat_full >= .5)
 tbl_itc_test$y_pred_full_1 <- as.integer(tbl_itc_test$p_hat_full >= .1)
@@ -154,7 +168,7 @@ plt_re <- ggplot(tbl_re, aes(condval)) +
     strip.text = element_text(size = 16)
   )
 
-grid.draw(arrangeGrob(plt_compare, plt_re, nrow = 1, widths = c(.3, .7)))
+grid.draw(arrangeGrob(plt_compare, plt_re, nrow = 1, widths = c(.4, .6)))
 
 pdf(file = "figures/itc-hierarchical-heuristics.pdf", 8, 4)
 grid.draw(arrangeGrob(plt_compare, plt_re, nrow = 1, widths = c(.3, .7)))
@@ -180,6 +194,27 @@ pl_raw <- ggplot(
     strip.text = element_text(size = 16),
     legend.title = element_blank()
   )
+
+pl_log <- ggplot(
+  tbl_itc %>% 
+    slice_sample(n = 100000) %>% 
+    group_by(absolute_value_diff, absolute_time_diff) %>%
+    summarize(n = n(), .groups = "drop"),
+  aes(log(absolute_time_diff), log(absolute_value_diff))) +
+  geom_point(aes(size = n)) +
+  geom_smooth(method = "lm") +
+  scale_y_continuous() +
+  scale_x_continuous() +
+  labs(y = "Abs. Value Difference", x = "Abs. Time Difference") +
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    strip.background = element_rect(fill = "white", color = "grey"),
+    strip.text = element_text(size = 16),
+    legend.title = element_blank()
+  )
+
 
 grid.draw(arrangeGrob(pl_raw, pl_log, nrow = 1))
 
@@ -250,11 +285,11 @@ precision <- function(ycol) {
 }
 
 tbl_prep <- crossing(
-    prefix = c("y_pred_full_", "y_pred_time_", "y_pred_value_"), 
-    centile = seq(1, 9, by = 2)
-  ) %>% mutate(
-    name = str_c(prefix, centile)
-    )
+  prefix = c("y_pred_full_", "y_pred_time_", "y_pred_value_"), 
+  centile = seq(1, 9, by = 2)
+) %>% mutate(
+  name = str_c(prefix, centile)
+)
 
 
 v_precision <- map_dbl(tbl_prep$name, precision)
@@ -269,7 +304,7 @@ tbl_precision <- crossing(
     Precision = v_precision,
     model = str_remove_all(str_extract(name, "_[a-z]*_"), "_"),
     centile = as.character(centile)
-    )
+  )
 
 
 tbl_metrics <- tbl_recall %>% 
@@ -280,7 +315,7 @@ tbl_metrics <- tbl_recall %>%
   )
 
 
-plt_auc <- ggplot(tbl_metrics, aes(FPR, Recall, group = model)) +
+plt_roc <- ggplot(tbl_metrics, aes(FPR, Recall, group = model)) +
   geom_abline() +
   geom_line(aes(color = model)) +
   geom_point(color = "white", size = 3) +
@@ -289,7 +324,7 @@ plt_auc <- ggplot(tbl_metrics, aes(FPR, Recall, group = model)) +
   scale_color_brewer(palette = "Set2", guide = "none") +
   scale_y_continuous(expand = expansion(add = c(0, 0))) +
   scale_x_continuous(expand = expansion(add = c(.01, 0))) +
-  labs(y = "TPR", x = "FPR", title = "AUC") +
+  labs(y = "TPR", x = "FPR", title = "ROC") +
   theme_bw() +
   theme(
     axis.title = element_text(size = 14),
@@ -321,7 +356,7 @@ plt_pr <- ggplot(tbl_metrics, aes(Recall, Precision, group = model)) +
 
 
 pdf(file = "figures/itc-heuristics-eval.pdf", 7, 3.5)
-grid.draw(arrangeGrob(plt_auc, plt_pr, nrow = 1, widths = c(.425, .575)))
+grid.draw(arrangeGrob(plt_roc, plt_pr, nrow = 1, widths = c(.425, .575)))
 dev.off()
 
 
