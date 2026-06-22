@@ -1,6 +1,9 @@
 models/
 data/
 wandb/
+documents/
+figures/
+logs/
 sources-of-variability.Rproj
 .Rproj.user
 __pycache__/
