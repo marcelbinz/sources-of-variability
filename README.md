@@ -1,6 +1,7 @@
 # Understanding Behavior Through Permutation-Based Predictive Modeling
+Instructions to reproduce the results in: Thalmann, M., Binz, M., & Schulz, E. (2026). Understanding behavior through permutation-based predictive modeling (5gbm6_v1). PsyArXiv. https://osf.io/preprints/psyarxiv/5gbm6_v1/
 
-- Download the whole osf repo and unzip
+- Download the whole associated osf repo under https://osf.io/qshb6 and unzip.
 
 ## Instructions to reproduce the python results
 
