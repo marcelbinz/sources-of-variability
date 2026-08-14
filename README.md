@@ -21,7 +21,9 @@ _Conda and Datasets_
 
 ### Computational Modeling: python scripts
 
-- initialize all models by running `python run_initializers.py` on the command line. This will sequentially execute all python scripts and save the modeling results on your wandb account
+- this is the major part: the transformer is trained on the data shuffled as desired and then evaluated on hold-out data.
+- a separate initialization script exists for every analysis (e.g., intertemporal choice & level 1 shuffling) that can be executed
+- however, you can initialize all models by running `python run_initializers.py` on the command line. This will sequentially execute all initialization scripts and save the modeling results on your wandb account
 - if you prefer running an individual model, just run `python initialize-train-...py`. Note that **itc** stands for the money-earlier-or-later (MEL) task, and **mm** stands for the ethical choice task in the moral-machine experiment. **conditions** refers to Level 1 shuffling, **variables** to Level 2 shuffling, **masklength** to the causal mask analysis, **conditions-cultureseq** to the additional analysis merging sequences from participants from the same culture in the ethical choice task, and **conditions-vary-n** for the additional analysis varying the data set size in the MEL task.
 
 ### Additional Analyses: jupyter notebooks
